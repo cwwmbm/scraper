@@ -1,4 +1,5 @@
-/node_modules
-/scratch
+node_modules/*
+scratch/*
 settings.js
-*.txt
+output.txt
+something.txt

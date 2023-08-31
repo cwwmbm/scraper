@@ -1,0 +1,24 @@
+{
+  "name": "puppeteer",
+  "version": "1.0.0",
+  "description": "",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.33.1",
+    "axios": "^1.5.0",
+    "cheerio": "^1.0.0-rc.12",
+    "node-localstorage": "^3.0.5",
+    "playwright": "^1.37.1",
+    "puppeteer": "^21.1.1",
+    "socks-proxy-agent": "^8.0.1",
+    "supabase": "^1.88.0",
+    "uuid": "^9.0.0"
+  }
+}

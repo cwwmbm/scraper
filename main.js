@@ -130,10 +130,10 @@ async function fetchJobCardsForPage(url, i, maxRetries = 3) {
         } catch (error) {
             if (error.response && error.response.status === 429 && attempt < maxRetries - 1) {
                 console.warn(`Received 429 response. Retrying in 3 seconds... (Retry ${attempt + 1}/${maxRetries})`);
-                await delay(2000);  // Wait for 2 seconds before retrying
+                // await delay(2000);  // Wait for 2 seconds before retrying
             } else {
                 console.error(`Error fetching page ${fullURL}:`, error.message);
-                await delay(2000);  // Wait for 2 seconds before retrying
+                // await delay(2000);  // Wait for 2 seconds before retrying
             }
         }
     }
@@ -292,7 +292,11 @@ async function main() {
     const searchQueries = getSearchQueries(queriesRes); //Ammending an array with search URL for each query}
     const results = await Promise.all(searchQueries.map(obj => getJobCards(obj))); //Getting Job Cards for each search query
     const allJobCards = [].concat(...results); // Flattening the array of arrays of job cards
-    const dedupedAllJobs = removeDuplicates(allJobCards); //Removing duplicates based on JobID
+    const dedupedAllJobs = removeDuplicates(allJobCards); //Removing duplicates based on JobID.
+    /* TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    Above function will be a problem when two user searches pick up the same job.
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!*/
+
     const relevantJobs = getTltleFilteredJobs(dedupedAllJobs, filtersRes).map(job => {
         return {
           ...job,
@@ -302,10 +306,90 @@ async function main() {
         }}); //Removing jobs that don't match user's filters
     console.log("relevantJobs: ", relevantJobs.length);
     const chunks = chunkArray(relevantJobs, 15);
-    const dedupedChunks = await findDuplicates(chunks, supabase);
-    console.log("dedupedChunks: ", dedupedChunks.length);
-    const time = getCurrentTime();
-    console.log("time: ", time);
+    const existingJobs = await findDuplicates(chunks, supabase);
+    const duplicates = relevantJobs
+        .filter(job => existingJobs.some(dup => dup.job_url === job.job_url))
+        .map(job => {
+            // Find the corresponding duplicate job from existingJobs
+            const dup = existingJobs.find(d => d.job_url === job.job_url);
+            
+            // Return a new object that combines the properties of job with the id from dup
+            return {
+            ...job,
+            id: dup.id
+            };
+    });
+    console.log("duplicates: ", duplicates[0])
+    const jobsToUpsert = duplicates.map(job => {
+        return {
+            job_id: job.id,
+            user_id: job.user_id,
+            created_at: getCurrentTime(),
+        }
+    });
+    console.log("Existing jobs to upsert into user_jobs: ", jobsToUpsert.length);
+    const pushUserJobs = await supabase.from('user_jobs').upsert(jobsToUpsert, {onConflict: 'user_id, job_id', ignoreDuplicates: true});
+    // console.log("pushUserJobs: ", pushUserJobs);
+
+    const newJobs = relevantJobs.filter(job => !duplicates.some(dup => dup.job_url === job.job_url));
+    console.log("newJobs: ", newJobs.length);
+
+    
+    let jobsWithDescription = [];
+    for (let i = 0; i < newJobs.length; i=i+15) {
+        jobsWithDescription.push(await getJobDescriptions(newJobs.slice(i, i+15)));
+    }
+
+    const newFilteredJobs = getDescriptionFilteredJobs([].concat(...jobsWithDescription), filtersRes); //Removing jobs that don't match user's filters for description
+
+    console.log("newFilteredJobs: ", newFilteredJobs.length);
+    
+    console.log("newFilteredJobs: ", newFilteredJobs[0]);
+
+    const newJobsToInsert = newFilteredJobs.map(row => ({ //Transforming the data to match the database for insertion
+        id: row.id,
+        title: row.title,
+        company: row.company,
+        location: row.location,
+        description: row.description,
+        date_posted: row.date_posted,
+        created_at: getCurrentTime(),
+        job_url: row.job_url,
+    }));
+
+    console.log("newJobsToInsert: ", newJobsToInsert.length);
+
+    const newUserJobsToInsert = newFilteredJobs.map(row => ({
+        id: uuidv4(),
+        job_id: row.id,
+        user_id: row.user_id,
+        created_at: getCurrentTime(),
+        is_applied: false,
+        is_hidden: false,
+        is_interview: false,
+        is_rejected: false,
+        notes: "",
+    }))
+    let insertJobs, insertUserJobs;
+    if (newUserJobsToInsert) {
+        console.log("newUserJobsToInsert: ", newUserJobsToInsert.length);
+        insertJobs = await supabase.from('jobs').insert(newJobsToInsert, {onConflict: 'job_url', ignoreDuplicates: true});
+    }
+    if (newUserJobsToInsert) {
+        console.log("newUserJobsToInsert: ", newUserJobsToInsert[0]);
+        insertUserJobs = await supabase.from('user_jobs').insert(newUserJobsToInsert, {onConflict: 'user_id, job_id', ignoreDuplicates: true});
+    }
+
+
+    if (insertJobs.error) console.log("insertJobs error: ", insertJobs.error);
+    if (insertUserJobs.error) console.log("insertUserJobs error: ", insertUserJobs.error);
+
+    // console.log("Inserted jobs: ", insertJobs.data.length);
+    // console.log("Inserted user_jobs: ", insertUserJobs.data.length);
+    
+    // console.log("dedupedChunks: ", dedupedChunks.length);
+    // const time = getCurrentTime();
+    // console.log("time: ", time);
     /*
     let fullJobs=[];
     for (let i = 0; i < relevantJobs.length; i=i+15) {

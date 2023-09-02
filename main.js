@@ -319,17 +319,22 @@ async function main() {
             id: dup.id
             };
     });
+    const duplicatesSrtedByDate = duplicates.sort((b, a) => new Date(b.date_posted) - new Date(a.date_posted));
     console.log("duplicates: ", duplicates[0])
-    const jobsToUpsert = duplicates.map(job => {
+    const jobsToUpsert = duplicatesSrtedByDate.map(job => {
         return {
             job_id: job.id,
             user_id: job.user_id,
-            created_at: getCurrentTime(),
+            created_at: new Date().toISOString(),
+            is_applied: false,
+            is_hidden: false,
+            is_interview: false,
+            is_rejected: false,
         }
     });
     console.log("Existing jobs to upsert into user_jobs: ", jobsToUpsert.length);
     const pushUserJobs = await supabase.from('user_jobs').upsert(jobsToUpsert, {onConflict: 'user_id, job_id', ignoreDuplicates: true});
-    // console.log("pushUserJobs: ", pushUserJobs);
+    console.log("pushUserJobs: ", pushUserJobs);
 
     const newJobs = relevantJobs.filter(job => !duplicates.some(dup => dup.job_url === job.job_url));
     console.log("newJobs: ", newJobs.length);
@@ -353,17 +358,17 @@ async function main() {
         location: row.location,
         description: row.description,
         date_posted: row.date_posted,
-        created_at: getCurrentTime(),
+        created_at: new Date().toISOString(),
         job_url: row.job_url,
     }));
 
     console.log("newJobsToInsert: ", newJobsToInsert.length);
 
     const newUserJobsToInsert = newFilteredJobs.map(row => ({
-        id: uuidv4(),
+        // id: uuidv4(),
         job_id: row.id,
         user_id: row.user_id,
-        created_at: getCurrentTime(),
+        created_at: new Date().toISOString(),
         is_applied: false,
         is_hidden: false,
         is_interview: false,
@@ -383,7 +388,7 @@ async function main() {
 
     if (insertJobs.error) console.log("insertJobs error: ", insertJobs.error);
     if (insertUserJobs.error) console.log("insertUserJobs error: ", insertUserJobs.error);
-
+//!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     // console.log("Inserted jobs: ", insertJobs.data.length);
     // console.log("Inserted user_jobs: ", insertUserJobs.data.length);
     

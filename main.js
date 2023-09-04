@@ -100,6 +100,7 @@ async function getJobCards(obj) {
     }));
 
     console.log("allJobCards: ", allJobCards.length);
+    console.log("allJobCards: ", allJobCards[0])
     return allJobCards;
 }
 async function fetchJobCardsForPage(url, i, maxRetries = 3) {
@@ -162,21 +163,21 @@ function getTltleFilteredJobs(dedupedAllJobs, filtersRes){
     for (let i = 0; i < dedupedAllJobs.length; i++) {
         filter = filtersRes.data.filter(item => item.user_id == dedupedAllJobs[i].user_id);
         if (filter.length > 0) {
-            if (filter[0].exclude_title_words.length > 0){
+            if (filter[0].exclude_title_words){
                 const excludeTitleWordsArray = filter[0].exclude_title_words.split(',').map(word => word.trim());
                 if (excludeTitleWordsArray.some(word => dedupedAllJobs[i].title.toLowerCase().includes(word.toLowerCase()))) {
                     // console.log("excluded title: ", dedupedAllJobs[i].title);
                     continue;
                 }              
             }
-            if (filter[0].exclude_company.length > 0){
+            if (filter[0].exclude_company){
                 const excludeCompanyWordsArray = filter[0].exclude_company.split(',').map(word => word.trim());
                 if (excludeCompanyWordsArray.some(word => dedupedAllJobs[i].company.toLowerCase().includes(word.toLowerCase()))) {
                     // console.log("excluded company: ", dedupedAllJobs[i].company);
                     continue;
                 }
             }
-            if (filter[0].include_title_words.length > 0){
+            if (filter[0].include_title_words){
                 const includeTitleWordsArray = filter[0].include_title_words.split(',').map(word => word.trim());
                 if (includeTitleWordsArray.some(word => dedupedAllJobs[i].title.toLowerCase().includes(word.toLowerCase()))) {
                     relevantJobs.push(dedupedAllJobs[i]);
@@ -208,14 +209,19 @@ function getDescriptionFilteredJobs(jobs, filtersRes){
 }
 function removeDuplicates(allJobCards) {
     const dedupedAllJobs = allJobCards.reduce((acc, curr) => {
-        if (!acc.map.has(curr.jobId)) {
-            acc.map.set(curr.jobId, true);  // Set any value to Map
+        const jobIdKey = curr.jobId;
+        const titleCompanyKey = `${curr.title}_${curr.company}`;
+
+        if (!acc.map.has(jobIdKey) && !acc.titleCompanyMap.has(titleCompanyKey)) {
+            acc.map.set(jobIdKey, true);
+            acc.titleCompanyMap.set(titleCompanyKey, true);
             acc.result.push(curr);
         }
         return acc;
-    }, { map: new Map(), result: [] }).result;
+    }, { map: new Map(), titleCompanyMap: new Map(), result: [] }).result;
     return dedupedAllJobs;
 }
+
 //Create function that return current date and time
 function getCurrentTime(){
     const date = new Date();
@@ -280,6 +286,13 @@ async function findDuplicates(batches, supabase) {
   
     return duplicates;
 }
+function chunkArrayQueries(array, chunkSize) {
+    const chunks = [];
+    for (let i = 0; i < array.length; i += chunkSize) {
+        chunks.push(array.slice(i, i + chunkSize));
+    }
+    return chunks;
+}
 async function main() {
 
      //Supabase connection and getting data from there
@@ -290,7 +303,15 @@ async function main() {
     const queriesRes = await supabase.from('job_search_queries').select('*') // getting all search queries from the database
     const filtersRes = await supabase.from('job_search_filters').select('*') // getting all job filters from the database
     const searchQueries = getSearchQueries(queriesRes); //Ammending an array with search URL for each query}
-    const results = await Promise.all(searchQueries.map(obj => getJobCards(obj))); //Getting Job Cards for each search query
+    const queryChunks = chunkArrayQueries(searchQueries, 5);
+    console.log("queryChunks: ", queryChunks.length);
+    // console.log("queryChunks: ", queryChunks[0]);
+    const results = [];
+    for (const chunk of queryChunks) {
+        const chunkResults = await Promise.all(chunk.map(obj => getJobCards(obj)));
+        results.push(...chunkResults);
+    }
+    // const results = await Promise.all(searchQueries.map(obj => getJobCards(obj))); //Getting Job Cards for each search query
     const allJobCards = [].concat(...results); // Flattening the array of arrays of job cards
     const dedupedAllJobs = removeDuplicates(allJobCards); //Removing duplicates based on JobID.
     /* TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -339,10 +360,12 @@ async function main() {
     const newJobs = relevantJobs.filter(job => !duplicates.some(dup => dup.job_url === job.job_url));
     console.log("newJobs: ", newJobs.length);
 
+    const newJobsSrtedByDate = newJobs.sort((b, a) => new Date(b.date_posted) - new Date(a.date_posted));
+
     
     let jobsWithDescription = [];
     for (let i = 0; i < newJobs.length; i=i+15) {
-        jobsWithDescription.push(await getJobDescriptions(newJobs.slice(i, i+15)));
+        jobsWithDescription.push(await getJobDescriptions(newJobsSrtedByDate.slice(i, i+15)));
     }
 
     const newFilteredJobs = getDescriptionFilteredJobs([].concat(...jobsWithDescription), filtersRes); //Removing jobs that don't match user's filters for description
@@ -350,6 +373,9 @@ async function main() {
     console.log("newFilteredJobs: ", newFilteredJobs.length);
     
     console.log("newFilteredJobs: ", newFilteredJobs[0]);
+
+    //Sort new date_posted
+    
 
     const newJobsToInsert = newFilteredJobs.map(row => ({ //Transforming the data to match the database for insertion
         id: row.id,
@@ -389,62 +415,7 @@ async function main() {
     if (insertJobs.error) console.log("insertJobs error: ", insertJobs.error);
     if (insertUserJobs.error) console.log("insertUserJobs error: ", insertUserJobs.error);
 //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    // console.log("Inserted jobs: ", insertJobs.data.length);
-    // console.log("Inserted user_jobs: ", insertUserJobs.data.length);
-    
-    // console.log("dedupedChunks: ", dedupedChunks.length);
-    // const time = getCurrentTime();
-    // console.log("time: ", time);
-    /*
-    let fullJobs=[];
-    for (let i = 0; i < relevantJobs.length; i=i+15) {
-        fullJobs.push(await getJobDescriptions(relevantJobs.slice(i, i+15)));
-    }
-    const allJobs = getDescriptionFilteredJobs([].concat(...fullJobs), filtersRes); //Removing jobs that don't match user's filters for description
-    // const updatedJobs = allJobs.map(job => {
-    //     return {
-    //       ...job,
-    //       job_url: `https://www.linkedin.com/jobs/view/${job.jobId}/`,
-    //       id: uuidv4(),
-    //     }})
-    
-    const transformedJobs = allJobs.map(row => ({ //Transforming the data to match the database for insertion
-            // id: row.id,
-            title: row.title,
-            company: row.company,
-            location: row.location,
-            description: row.description,
-            date_posted: row.date_posted,
-            created_at: getCurrentTime(),
-            job_url: row.job_url,
-    }));
 
-    const transformedUserJobs = allJobs
-    .map(row => ({
-    id: uuidv4(),
-    job_id: row.id,
-    user_id: row.user_id,
-    created_at: getCurrentTime(),
-    is_applied: false,
-    is_hidden: false,
-    is_interview: false,
-    is_rejected: false,
-    notes: "",
-    }))
-
-    console.log("allJobs Length: ", allJobs.length);
-    const jobBatches = chunkArray(transformedJobs, 10);
-    const duplicates = await findDuplicates(jobBatches, supabase);
-    console.log("duplicates: ", duplicates.length);
-    const updatedJobs = transformedJobs.filter(job => !duplicates.some(dup => dup.job_url === job.job_url));
-    console.log("updatedJobs: ", updatedJobs.length);
-    
-    // const insertJobs = await supabase.from('jobs').upsert(updatedJobs, {onConflict: 'job_url'});
-    // const insertUserJobs = await supabase.from('user_jobs').insert(transformedUserJobs);
-    // console.log("insertJobs: ", insertJobs);
-    // console.log("insertUserJobs: ", insertUserJobs);
-    // console.log("updatedJobs: ", updatedJobs[0]);
-    // const fullJobs = await getJobDescriptions(relevantJobs, browser);*/
 }
 
 const initialMemoryUsage = process.memoryUsage().heapUsed / 1024 / 1024;

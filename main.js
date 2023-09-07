@@ -84,12 +84,14 @@ async function signIn(supabase){
   });
   return res;
 }
-async function getJobCards(obj) {
+async function getJobCards(obj, settings) {
     // Create an array of promises for each page search
     const promises = [];
     const url = obj.url;
-    for (let i = 0; i < 4; i++) {
-        promises.push(fetchJobCardsForPage(url, i));
+    let pages = 1;
+    if (settings[0].pages_to_scrape && settings[0].pages_to_scrape > 0) pages = settings[0].pages_to_scrape; else pages = 1;
+    for (let i = 0; i < pages; i++) {
+        promises.push(fetchJobCardsForPage(url, settings, i));
     }
 
     // Wait for all promises to resolve and flatten the resulting arrays
@@ -100,12 +102,14 @@ async function getJobCards(obj) {
     }));
 
     console.log("allJobCards: ", allJobCards.length);
-    console.log("allJobCards: ", allJobCards[0])
+    // console.log("allJobCards: ", allJobCards[0])
     return allJobCards;
 }
-async function fetchJobCardsForPage(url, i, maxRetries = 3) {
+async function fetchJobCardsForPage(url, settings, i, maxRetries = 3) {
     let fullURL = url + (i * 25).toString();
-
+    let days = 30;
+    // console.log(settings)
+    if (settings[0].days_to_scrape && settings[0].days_to_scrape > 0) days = settings[0].days_to_scrape; else days = 30;
     for (let attempt = 0; attempt < maxRetries; attempt++) {
         try {
             console.log("going to url: ", fullURL);
@@ -117,14 +121,25 @@ async function fetchJobCardsForPage(url, i, maxRetries = 3) {
             const jobCards = [];
             
             $('li > div.base-search-card').each((_, node) => {
+                let datePosted = null;
                 const title = $(node).find('h3.base-search-card__title').text().trim();
                 const company = $(node).find('h4.base-search-card__subtitle a').text().trim();
-                const datePosted = $(node).find('time.job-search-card__listdate').attr('datetime');
+                datePosted = $(node).find('time.job-search-card__listdate').attr('datetime');
+                if (!datePosted) {
+                    datePosted = $(node).find('time.job-search-card__listdate--new').attr('datetime');
+                }
                 const location = $(node).find('span.job-search-card__location').text().trim();
                 
                 const jobIdMatch = $(node).attr('data-entity-urn').match(/\d+$/);
                 const jobId = jobIdMatch ? jobIdMatch[0] : null;
-
+                // if (!datePosted) {
+                //     // retry again if datePosted is null
+                //     throw new Error(`datePosted is null for job ID: ${jobId}`);
+                // }
+                if (datePosted && new Date(datePosted) < new Date(new Date().setDate(new Date().getDate() - days))) {
+                    // console.log("Skipping an old job: datePosted: ", datePosted);
+                    return;
+                }
                 jobCards.push({ title, company, location, datePosted, jobId });
             });
             return jobCards;
@@ -163,21 +178,21 @@ function getTltleFilteredJobs(dedupedAllJobs, filtersRes){
     for (let i = 0; i < dedupedAllJobs.length; i++) {
         filter = filtersRes.data.filter(item => item.user_id == dedupedAllJobs[i].user_id);
         if (filter.length > 0) {
-            if (filter[0].exclude_title_words){
+            if (filter[0].exclude_title_words && dedupedAllJobs[i].title){
                 const excludeTitleWordsArray = filter[0].exclude_title_words.split(',').map(word => word.trim());
                 if (excludeTitleWordsArray.some(word => dedupedAllJobs[i].title.toLowerCase().includes(word.toLowerCase()))) {
                     // console.log("excluded title: ", dedupedAllJobs[i].title);
                     continue;
                 }              
             }
-            if (filter[0].exclude_company){
+            if (filter[0].exclude_company && dedupedAllJobs[i].company){
                 const excludeCompanyWordsArray = filter[0].exclude_company.split(',').map(word => word.trim());
                 if (excludeCompanyWordsArray.some(word => dedupedAllJobs[i].company.toLowerCase().includes(word.toLowerCase()))) {
                     // console.log("excluded company: ", dedupedAllJobs[i].company);
                     continue;
                 }
             }
-            if (filter[0].include_title_words){
+            if (filter[0].include_title_words && dedupedAllJobs[i].title){
                 const includeTitleWordsArray = filter[0].include_title_words.split(',').map(word => word.trim());
                 if (includeTitleWordsArray.some(word => dedupedAllJobs[i].title.toLowerCase().includes(word.toLowerCase()))) {
                     relevantJobs.push(dedupedAllJobs[i]);
@@ -195,15 +210,22 @@ function getDescriptionFilteredJobs(jobs, filtersRes){
     for (let i = 0; i < jobs.length; i++) {
         filter = filtersRes.data.filter(item => item.user_id == jobs[i].user_id);
         if (filter.length > 0) {
-            if (filter[0].exclude_description_words.length > 0){
+            if (filter[0].exclude_description_words && jobs[i].description.length > 0){
+                // console.log("Doing an exclude description filter")
                 const excludeDescriptionWordsArray = filter[0].exclude_description_words.split(',').map(word => word.trim());
                 const matchingWord = excludeDescriptionWordsArray.find(word => jobs[i].description.toLowerCase().includes(word.toLowerCase()));
                 if (matchingWord) {
                     // console.log("excluded description: ", jobs[i].jobId, jobs[i].title, "'", matchingWord, "'");
                     continue;
-                } else relevantJobs.push(jobs[i]);             
-             } else relevantJobs.push(jobs[i]);
-        }
+                } else {
+                    relevantJobs.push(jobs[i]);
+                    // console.log("included description 2nd if: ", jobs[i].jobId, jobs[i].title);
+                }
+             } else {
+                relevantJobs.push(jobs[i]);
+                // console.log("included description 1st if: ", jobs[i].jobId, jobs[i].title);
+             }
+        } else relevantJobs.push(jobs[i]);
     }
     return relevantJobs;
 }
@@ -221,7 +243,6 @@ function removeDuplicates(allJobCards) {
     }, { map: new Map(), titleCompanyMap: new Map(), result: [] }).result;
     return dedupedAllJobs;
 }
-
 //Create function that return current date and time
 function getCurrentTime(){
     const date = new Date();
@@ -300,19 +321,25 @@ async function main() {
     global.localStorage = new LocalStorage("./scratch");
     const supabase = createClient(url, key,{auth: {storage: global.localStorage,},})
     const supa = await signIn(supabase); //Signing into Supabase
-    const queriesRes = await supabase.from('job_search_queries').select('*') // getting all search queries from the database
+    const queriesRes = await supabase.from('job_search_queries').select('*')//.eq('user_id', '0b77d408-f32b-453d-8b25-da28f2d8f9fa') // getting all search queries from the database
     const filtersRes = await supabase.from('job_search_filters').select('*') // getting all job filters from the database
+    const { data: settings } = await supabase.from('settings').select('*') // getting all settings from the database
+    console.log(settings[0]);
+    delay(10000);
     const searchQueries = getSearchQueries(queriesRes); //Ammending an array with search URL for each query}
     const queryChunks = chunkArrayQueries(searchQueries, 5);
     console.log("queryChunks: ", queryChunks.length);
     // console.log("queryChunks: ", queryChunks[0]);
     const results = [];
     for (const chunk of queryChunks) {
-        const chunkResults = await Promise.all(chunk.map(obj => getJobCards(obj)));
+        const chunkResults = await Promise.all(chunk.map(obj => getJobCards(obj, settings)));
         results.push(...chunkResults);
     }
     // const results = await Promise.all(searchQueries.map(obj => getJobCards(obj))); //Getting Job Cards for each search query
     const allJobCards = [].concat(...results); // Flattening the array of arrays of job cards
+    console.log("allJobCards: ", allJobCards.length);
+    const jobCardsNoDatePosted = allJobCards.filter(job => !job.datePosted); //Removing jobs that don't have datePosted
+    console.log("jobCardsNoDatePosted: ", jobCardsNoDatePosted.length);
     const dedupedAllJobs = removeDuplicates(allJobCards); //Removing duplicates based on JobID.
     /* TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     Above function will be a problem when two user searches pick up the same job.
@@ -341,7 +368,7 @@ async function main() {
             };
     });
     const duplicatesSrtedByDate = duplicates.sort((b, a) => new Date(b.date_posted) - new Date(a.date_posted));
-    console.log("duplicates: ", duplicates[0])
+    // console.log("duplicates: ", duplicates[0])
     const jobsToUpsert = duplicatesSrtedByDate.map(job => {
         return {
             job_id: job.id,
@@ -351,6 +378,7 @@ async function main() {
             is_hidden: false,
             is_interview: false,
             is_rejected: false,
+            date_posted: job.date_posted,
         }
     });
     console.log("Existing jobs to upsert into user_jobs: ", jobsToUpsert.length);
@@ -367,12 +395,13 @@ async function main() {
     for (let i = 0; i < newJobs.length; i=i+15) {
         jobsWithDescription.push(await getJobDescriptions(newJobsSrtedByDate.slice(i, i+15)));
     }
+    console.log("jobsWithDescription: ", ([].concat(...jobsWithDescription)).length);
 
     const newFilteredJobs = getDescriptionFilteredJobs([].concat(...jobsWithDescription), filtersRes); //Removing jobs that don't match user's filters for description
 
     console.log("newFilteredJobs: ", newFilteredJobs.length);
     
-    console.log("newFilteredJobs: ", newFilteredJobs[0]);
+    // console.log("newFilteredJobs: ", newFilteredJobs[0]);
 
     //Sort new date_posted
     
@@ -399,6 +428,7 @@ async function main() {
         is_hidden: false,
         is_interview: false,
         is_rejected: false,
+        date_posted: row.date_posted,
         notes: "",
     }))
     let insertJobs, insertUserJobs;
@@ -407,7 +437,7 @@ async function main() {
         insertJobs = await supabase.from('jobs').insert(newJobsToInsert, {onConflict: 'job_url', ignoreDuplicates: true});
     }
     if (newUserJobsToInsert) {
-        console.log("newUserJobsToInsert: ", newUserJobsToInsert[0]);
+        // console.log("newUserJobsToInsert: ", newUserJobsToInsert[0]);
         insertUserJobs = await supabase.from('user_jobs').insert(newUserJobsToInsert, {onConflict: 'user_id, job_id', ignoreDuplicates: true});
     }
 
@@ -423,6 +453,7 @@ const start = performance.now();
 
 
 await main();
+
 
 
 const finalMemoryUsage = process.memoryUsage().heapUsed / 1024 / 1024;

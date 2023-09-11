@@ -5,3 +5,5 @@ settings.js
 venv/
 myenv/
 config.json
+*.py
+img_url.js

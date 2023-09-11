@@ -19,7 +19,6 @@ async function getJobDescriptions(jobPosts) {
     const descriptions = await Promise.all(jobPosts.map(async (job) => {
         let description = "";
         let retries = 3;  // Number of retry attempts
-        let imageUrl = "";
 
         while (retries > 0) {
             try {
@@ -52,8 +51,6 @@ async function getJobDescriptions(jobPosts) {
                             break;
                     }
                 });
-                const img = $('img.artdeco-entity-image');
-                imageUrl = img.eq(0).attr('data-delayed-url');
 
                 // console.log(description);  // This will print out the formatted job description
                 if (description.length>0) break; else {
@@ -70,17 +67,13 @@ async function getJobDescriptions(jobPosts) {
         if (description.length == 0 && retries == 0) {
             console.log(`Failed to extract description for job ID: ${job.jobId} after multiple attempts.`);
         }
-        if (imageUrl.length == 0 && retries == 0) {
-            console.log(`Failed to extract logo for job ID: ${job.jobId} after multiple attempts.`);
-        }
-        const decrAndLogos = {description: description, imageUrl: imageUrl};
-        return decrAndLogos;
+
+        return description;
     }));
 
     // Merge descriptions into jobPosts
     jobPosts.forEach((job, index) => {
-        job.description = descriptions[index].description;
-        job.logo_url = descriptions[index].imageUrl;
+        job.description = descriptions[index];
     });
     return jobPosts;
 }
@@ -321,147 +314,128 @@ function chunkArrayQueries(array, chunkSize) {
     }
     return chunks;
 }
-async function getJobCardsForAllQueries(queriesRes, settings) {
-    const searchQueries = getSearchQueries(queriesRes); //Ammending an array with search URL for each query}
-    const queryChunks = chunkArrayQueries(searchQueries, 5);
-    console.log("queryChunks: ", queryChunks.length);
-    // console.log("queryChunks: ", queryChunks[0]);
-    const results = [];
-    for (const chunk of queryChunks) {
-        const chunkResults = await Promise.all(chunk.map(obj => getJobCards(obj, settings)));
-        results.push(...chunkResults);
+async function getJobLogo(jobPosts) {
+    // console.log("jobPosts: ", jobPosts);
+    const logos = await Promise.all(jobPosts.map(async (job) => {
+        let description = "";
+        let retries = 3;  // Number of retry attempts
+        let imageUrl = "";
+
+        while (retries > 0) {
+            try {
+                console.log("job.job_url: ", job.job_url)
+                // console.log(`Fetching job description for job ID: ${job.jobId}`)
+                const response = await axios.get(`${job.job_url}`, { httpAgent: agent, httpsAgent: agent, timeout: 2000 });
+                const html = response.data;
+                const $ = load(html);
+
+                const img = $('img.artdeco-entity-image');
+                imageUrl = img.eq(0).attr('data-delayed-url');
+                console.log("data-delayed-url: ", imageUrl);
+
+                // console.log(description);  // This will print out the formatted job description
+                if (imageUrl.length>0) break; else {
+                    console.log(`Image URL is null for the https://www.linkedin.com/jobs/view/${job.jobId}/`);
+                    break;
+                }
+            } catch (error) {
+                retries--;
+                console.log(`Retry attempt for job ID: ${job.jobId}. Remaining retries: ${retries}. Error: ${error.message}`);
+                await delay(1000);
+            }
+        }
+
+        if (imageUrl.length == 0 && retries == 0) {
+            console.log(`Failed to extract description for job ID: ${job.jobId} after multiple attempts.`);
+        }
+
+        return imageUrl;
+    }));
+
+    // Merge descriptions into jobPosts
+    jobPosts.forEach((job, index) => {
+        job.logo_url = logos[index];
+    });
+    return jobPosts;
+}
+async function getLogo (url) {
+    let retries = 1;  // Number of retry attempts
+    while (retries > 0) {
+        try {
+            console.log("job.job_url: ", url)
+            // console.log(`Fetching job description for job ID: ${job.jobId}`)
+            const response = await axios.get(`${url}`, { httpAgent: agent, httpsAgent: agent, timeout: 2000 });
+            const html = response.data;
+            const $ = load(html);
+
+            // let imageUrl = $('img[data-ghost-url]').attr('src') || $('img[aria-busy="false"]').attr('src');
+            const img = $('img.artdeco-entity-image');
+            // console.log ("img: ", img);
+            const dataDelayedUrl = img.eq(0).attr('data-delayed-url');
+            console.log("data-delayed-url: ", dataDelayedUrl);
+
+            // console.log("imageUrl: ", imageUrl);
+
+            // console.log(description);  // This will print out the formatted job description
+            if (imageUrl.length>0) break; else {
+                console.log(`Image URL is null for the ${url}`);
+                break;
+            }
+        } catch (error) {
+            retries--;
+            console.log(`Retry attempt for job. Remaining retries: ${retries}. Error: ${error.message}`);
+            await delay(1000);
+        }
     }
-    // const results = await Promise.all(searchQueries.map(obj => getJobCards(obj))); //Getting Job Cards for each search query
-    const allJobCards = [].concat(...results); // Flattening the array of arrays of job cards
-    console.log("allJobCards: ", allJobCards.length);
-    // const jobCardsNoDatePosted = allJobCards.filter(job => !job.datePosted); //Removing jobs that don't have datePosted
-    return allJobCards;
+
+    if (imageUrl.length == 0 && retries == 0) {
+        console.log(`Failed to extract description for job ID: ${job.jobId} after multiple attempts.`);
+    }
+
+    return imageUrl;
 }
 async function main() {
 
      //Supabase connection and getting data from there
+
     global.localStorage = new LocalStorage("./scratch");
     const supabase = createClient(url, key,{auth: {storage: global.localStorage,},})
     const supa = await signIn(supabase); //Signing into Supabase
-    const queriesRes = await supabase.from('job_search_queries').select('*')//.eq('user_id', '0b77d408-f32b-453d-8b25-da28f2d8f9fa') // getting all search queries from the database
-    const filtersRes = await supabase.from('job_search_filters').select('*') // getting all job filters from the database
-    const { data: settings } = await supabase.from('settings').select('*') // getting all settings from the database
-    // console.log(settings[0]);
-    
+    // const queriesRes = await supabase.from('job_search_queries').select('*')//.eq('user_id', '0b77d408-f32b-453d-8b25-da28f2d8f9fa') // getting all search queries from the database
+    // const filtersRes = await supabase.from('job_search_filters').select('*') // getting all job filters from the database
+    // const { data: settings } = await supabase.from('settings').select('*') // getting all settings from the database
+    const data = await supabase.from('jobs').select('*').order('date_posted', { ascending: true });
+    console.log("data: ", data.data.length);
+    console.log("data: ", data.data[0]);
+    const jobs = data.data;
+    // const batches = chunkArrayQueries(data.data, 15);
+    // console.log("batches: ", batches.length);
+    // console.log("batches: ", batches[0]);
+    // const results = [];
+    // for (const batch of batches) {
+    //     const logos = await Promise.all(batch.map(async (job) => {getJobLogo(job)}));
+    //     results.push(...logos);
+    // }
 
-    //Getting all job cards for all queries
-    const allJobCards = await getJobCardsForAllQueries(queriesRes, settings);
 
-
-    const dedupedAllJobs = removeDuplicates(allJobCards); //Removing duplicates based on JobID.
-    /* TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    Above function will be a problem when two user searches pick up the same job.
-    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!*/
-
-    const relevantJobs = getTltleFilteredJobs(dedupedAllJobs, filtersRes).map(job => {
-        return {
-          ...job,
-          id: uuidv4(),
-          job_url: `https://www.linkedin.com/jobs/view/${job.jobId}/`,
-          date_posted: convertDateToTimestamp(job.datePosted),
-        }}); //Removing jobs that don't match user's filters
-    console.log("relevantJobs: ", relevantJobs.length);
-    const chunks = chunkArray(relevantJobs, 15);
-    const existingJobs = await findDuplicates(chunks, supabase);
-    const duplicates = relevantJobs
-        .filter(job => existingJobs.some(dup => dup.job_url === job.job_url))
-        .map(job => {
-            // Find the corresponding duplicate job from existingJobs
-            const dup = existingJobs.find(d => d.job_url === job.job_url);
-            
-            // Return a new object that combines the properties of job with the id from dup
-            return {
-            ...job,
-            id: dup.id
-            };
-    });
-    const duplicatesSrtedByDate = duplicates.sort((b, a) => new Date(b.date_posted) - new Date(a.date_posted));
-    // console.log("duplicates: ", duplicates[0])
-    const jobsToUpsert = duplicatesSrtedByDate.map(job => {
-        return {
-            job_id: job.id,
-            user_id: job.user_id,
-            created_at: new Date().toISOString(),
-            is_applied: false,
-            is_hidden: false,
-            is_interview: false,
-            is_rejected: false,
-            date_posted: job.date_posted,
-        }
-    });
-    console.log("Existing jobs to upsert into user_jobs: ", jobsToUpsert.length);
-    const pushUserJobs = await supabase.from('user_jobs').upsert(jobsToUpsert, {onConflict: 'user_id, job_id', ignoreDuplicates: true});
-    // console.log("pushUserJobs: ", pushUserJobs);
-
-    const newJobs = relevantJobs.filter(job => !duplicates.some(dup => dup.job_url === job.job_url)).filter(job => (job.title !== null 
-                                                                                                                && job.title !== undefined
-                                                                                                                && job.date_posted !== null));
-
-    console.log("newJobs: ", newJobs.length);
-
-    const newJobsSrtedByDate = newJobs.sort((b, a) => new Date(b.date_posted) - new Date(a.date_posted));
-
-    
-    let jobsWithDescription = [];
-    for (let i = 0; i < newJobs.length; i=i+15) {
-        jobsWithDescription.push(await getJobDescriptions(newJobsSrtedByDate.slice(i, i+15)));
+    let results = [];
+    for (let i = 0; i < jobs.length; i=i+15) {
+        results.push(await getJobLogo(jobs.slice(i, i+15)));
     }
-    console.log("jobsWithDescription: ", ([].concat(...jobsWithDescription)).length);
+    const jobsWithLogos = [].concat(...results);
+    const jobsWithLogosFiltered = jobsWithLogos.filter(job => job.logo_url);
 
-    const newFilteredJobs = getDescriptionFilteredJobs([].concat(...jobsWithDescription), filtersRes); //Removing jobs that don't match user's filters for description
+    const upload = await supabase.from('jobs').upsert(jobsWithLogosFiltered, { onConflict: 'job_url', ignoreDuplicates: false });
 
-    console.log("newFilteredJobs: ", newFilteredJobs.length);
-    
-    // console.log("newFilteredJobs: ", newFilteredJobs[0]);
+    console.log("upload: ", upload);
 
-    //Sort new date_posted
-    
+    // const oneUrl = await getLogo('https://www.linkedin.com/jobs/view/3713274858/');
 
-    const newJobsToInsert = newFilteredJobs.map(row => ({ //Transforming the data to match the database for insertion
-        id: row.id,
-        title: row.title,
-        company: row.company,
-        location: row.location,
-        description: row.description,
-        date_posted: row.date_posted,
-        created_at: new Date().toISOString(),
-        job_url: row.job_url,
-        logo_url: row.logo_url,
-    }));
-
-    console.log("newJobsToInsert: ", newJobsToInsert.length);
-    // console.log("newJobsToInsert: ", newJobsToInsert[0]);
-
-    const newUserJobsToInsert = newFilteredJobs.map(row => ({
-        // id: uuidv4(),
-        job_id: row.id,
-        user_id: row.user_id,
-        created_at: new Date().toISOString(),
-        is_applied: false,
-        is_hidden: false,
-        is_interview: false,
-        is_rejected: false,
-        date_posted: row.date_posted,
-        notes: "",
-    }))
-    let insertJobs, insertUserJobs;
-    if (newUserJobsToInsert) {
-        console.log("newUserJobsToInsert: ", newUserJobsToInsert.length);
-        insertJobs = await supabase.from('jobs').insert(newJobsToInsert, {onConflict: 'job_url', ignoreDuplicates: true});
-    }
-    if (!insertJobs.error && newUserJobsToInsert) {
-        // console.log("newUserJobsToInsert: ", newUserJobsToInsert[0]);
-        insertUserJobs = await supabase.from('user_jobs').insert(newUserJobsToInsert, {onConflict: 'user_id, job_id', ignoreDuplicates: true});
-    }
+    console.log("jobsWithLogos: ", jobsWithLogosFiltered.length);
+    // console.log("jobsWithLogos: ", jobsWithLogosFiltered);
 
 
-    if (insertJobs.error) console.log("insertJobs error: ", insertJobs.error);
-    if (insertUserJobs.error) console.log("insertUserJobs error: ", insertUserJobs.error);
+
 //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 }

@@ -8,3 +8,4 @@ config.json
 *.py
 img_url.js
 popuser.js
+description.js

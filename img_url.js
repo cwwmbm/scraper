@@ -396,43 +396,44 @@ async function getLogo (url) {
 }
 async function main() {
 
-     //Supabase connection and getting data from there
-
     global.localStorage = new LocalStorage("./scratch");
     const supabase = createClient(url, key,{auth: {storage: global.localStorage,},})
     const supa = await signIn(supabase); //Signing into Supabase
-    // const queriesRes = await supabase.from('job_search_queries').select('*')//.eq('user_id', '0b77d408-f32b-453d-8b25-da28f2d8f9fa') // getting all search queries from the database
-    // const filtersRes = await supabase.from('job_search_filters').select('*') // getting all job filters from the database
-    // const { data: settings } = await supabase.from('settings').select('*') // getting all settings from the database
-    const data = await supabase.from('jobs').select('*').order('date_posted', { ascending: true });
-    console.log("data: ", data.data.length);
-    console.log("data: ", data.data[0]);
-    const jobs = data.data;
-    // const batches = chunkArrayQueries(data.data, 15);
-    // console.log("batches: ", batches.length);
-    // console.log("batches: ", batches[0]);
-    // const results = [];
-    // for (const batch of batches) {
-    //     const logos = await Promise.all(batch.map(async (job) => {getJobLogo(job)}));
-    //     results.push(...logos);
-    // }
+    const queriesRes = await supabase.from('job_queries').select('*')//.eq('user_id', '0b77d408-f32b-453d-8b25-da28f2d8f9fa') // getting all search queries from the database
+    const profileRes = await supabase.from('job_profiles').select('*') // getting all job filters from the database
+    const { data: settings } = await supabase.from('settings').select('*') // getting all settings from the database
 
-
-    let results = [];
-    for (let i = 0; i < jobs.length; i=i+15) {
-        results.push(await getJobLogo(jobs.slice(i, i+15)));
+    const uniqueUsers = [...new Set(profileRes.data.map(item => {
+        return {
+            user_id: item.user_id,
+            id: item.id,
+    }}))]; // getting unique users from the search queries
+    for (let i = 0; i < uniqueUsers.length; i++) {
+        const {data: userJobs, error: error} = await supabase.from('user_jobs').select('*').eq('user_id', uniqueUsers[i].user_id).is('job_profile', null); // getting all jobs for the user from the database
+        if (error) {
+            console.log("error: ", error);
+        } else if (userJobs && userJobs.length > 0) {
+            console.log("userJobs: ", userJobs.length)
+            console.log("User ID: ", uniqueUsers[i].user_id);
+            const jobsToUpdate = userJobs.map(item => {
+                return {
+                    ...item,
+                    job_profile: uniqueUsers[i].id,
+                    updated_at: getCurrentTime(),
+                }
+            });
+            const {data: updatedJobs, error: error} = await supabase.from('user_jobs').upsert(jobsToUpdate); // updating all jobs for the user in the database
+            if (error) {
+                console.log("error: ", error);
+            }
+        } else if (userJobs) {
+            console.log("No jobs to update for user: ", uniqueUsers[i].user_id);
+        }
     }
-    const jobsWithLogos = [].concat(...results);
-    const jobsWithLogosFiltered = jobsWithLogos.filter(job => job.logo_url);
+    
+    console.log("uniqueUsers: ", uniqueUsers);
 
-    const upload = await supabase.from('jobs').upsert(jobsWithLogosFiltered, { onConflict: 'job_url', ignoreDuplicates: false });
 
-    console.log("upload: ", upload);
-
-    // const oneUrl = await getLogo('https://www.linkedin.com/jobs/view/3713274858/');
-
-    console.log("jobsWithLogos: ", jobsWithLogosFiltered.length);
-    // console.log("jobsWithLogos: ", jobsWithLogosFiltered);
 
 
 

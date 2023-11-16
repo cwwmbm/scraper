@@ -160,7 +160,7 @@ async function fetchJobCardsForPage(url, settings, i, maxRetries = 3) {
         try {
             console.log("going to url: ", fullURL);
 
-            const response = await axios.get(fullURL, { httpAgent: agent, httpsAgent: agent, timeout: 3000 });
+            const response = await axios.get(fullURL, { httpAgent: agent, httpsAgent: agent, timeout: process.env.TIMEOUT });
             const html = response.data;
 
             const $ = load(html);

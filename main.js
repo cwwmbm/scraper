@@ -426,7 +426,7 @@ async function main() {
     global.localStorage = new LocalStorage("./scratch");
     const supabase = createClient(process.env.URL, process.env.KEY,{auth: {storage: global.localStorage,},})
     const supa = await signIn(supabase); //Signing into Supabase
-    const queriesRes = await supabase.from('job_queries').select('*').eq('user_id', '16dc25c7-1898-48d2-9d24-0f879de6d82e') // getting all search queries from the database
+    const queriesRes = await supabase.from('job_queries').select('*')//.eq('user_id', '16dc25c7-1898-48d2-9d24-0f879de6d82e') // getting all search queries from the database
     const profileRes = await supabase.from('job_profiles').select('*') // getting all job filters from the database
     const { data: settings } = await supabase.from('settings').select('*') // getting all settings from the database
     

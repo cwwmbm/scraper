@@ -27,7 +27,7 @@ async function getJobDescriptionsForArray(jobPosts) {
         while (retries > 0) {
             try {
                 // console.log(`Fetching job description for job ID: ${job.jobId}`)
-                const response = await axios.get(`https://www.linkedin.com/jobs/view/${job.jobId}/`, { httpAgent: agent, httpsAgent: agent, timeout: 3000 });
+                const response = await axios.get(`https://www.linkedin.com/jobs/view/${job.jobId}/`, { httpAgent: agent, httpsAgent: agent, timeout: process.env.TIMEOUT });
                 const html = response.data;
                 const $ = load(html);
                 // Extract the job description HTML

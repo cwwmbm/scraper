@@ -426,7 +426,7 @@ async function main() {
     global.localStorage = new LocalStorage("./scratch");
     const supabase = createClient(process.env.URL, process.env.KEY,{auth: {storage: global.localStorage,},})
     const supa = await signIn(supabase); //Signing into Supabase
-    const queriesRes = await supabase.from('job_queries').select('*')//.eq('user_id', '4304bd4b-fabb-4c0a-a038-f836eca01f2d') // getting all search queries from the database
+    const queriesRes = await supabase.from('job_queries').select('*').eq('user_id', '16dc25c7-1898-48d2-9d24-0f879de6d82e') // getting all search queries from the database
     const profileRes = await supabase.from('job_profiles').select('*') // getting all job filters from the database
     const { data: settings } = await supabase.from('settings').select('*') // getting all settings from the database
     
@@ -511,11 +511,27 @@ async function main() {
     const filteredDuplicateJobs = getDescriptionFilteredJobs(duplicateJobs);
     console.log("filteredDuplicateJobs: ", filteredDuplicateJobs.length);
 
+    //Extract from jobsWithDescription array of jobs that is not in filteredUniqueJobs
+    const filteredOutJobs = jobsWithDescription.filter(job => !filteredUniqueJobs.some(dup => dup.job_url === job.job_url));
+
     // Merge and un-merge the two arrays again to account for the fact that some jobs may have been filtered out in the unique and duplicate arrays
     const filteredJobs = [...filteredUniqueJobs, ...filteredDuplicateJobs];
     const [uniqueFilteredJobs, duplicateFilteredJobs] = separateArrays(filteredJobs);
-    console.log("Number of jobs to insert into jobs database: ", uniqueFilteredJobs.length);
+    console.log("Number of jobs passed filtering to insert into jobs database: ", uniqueFilteredJobs.length);
+    console.log("Number of jobs filtered out: ", filteredOutJobs.length)
     console.log("Number of jobs to upsert into user_jobs database: ", filteredJobs.length);
+
+    const filteredOutJobsToInsert = filteredOutJobs.map(row => ({
+        id: row.id,
+        title: row.title || "Couldn't find title",
+        company: row.company || "Couldn't find company",
+        location: row.location || '',
+        description: row.description || '',
+        date_posted: row.date_posted || '',
+        created_at: new Date().toISOString(),
+        job_url: row.job_url || '',
+        logo_url: row.logo_url || '',
+    }));
 
     // Transform the data to match the database for insertion for jobs table
     const jobsToInsert = uniqueFilteredJobs.map(row => ({
@@ -546,10 +562,15 @@ async function main() {
 
 
     // Insert jobsToInsert into the jobs table
-    let insertJobs, insertUserJobs;
+    let insertJobs, insertUserJobs, insertFilteredOutJobs;
     if (jobsToInsert) {
         // console.log("newUserJobsToInsert: ", newUserJobsToInsert.length);
         insertJobs = await supabase.from('jobs').insert(jobsToInsert, {onConflict: 'job_url', ignoreDuplicates: true});
+    }
+
+    if (filteredOutJobsToInsert) {
+        // console.log("newUserJobsToInsert: ", newUserJobsToInsert.length);
+        insertFilteredOutJobs = await supabase.from('jobs').insert(filteredOutJobsToInsert, {onConflict: 'job_url', ignoreDuplicates: true});
     }
 
     // Insert userJobsToInsert into the user_jobs table
@@ -561,6 +582,7 @@ async function main() {
 
     if (insertJobs.error) console.log("insertJobs error: ", insertJobs.error);
     if (insertUserJobs.error) console.log("insertUserJobs error: ", insertUserJobs.error);
+    if (insertFilteredOutJobs.error) console.log("insertFilteredOutJobs error: ", insertFilteredOutJobs.error);
 
 }
 

@@ -10,3 +10,4 @@ img_url.js
 popuser.js
 description.js
 *.log
+.env*

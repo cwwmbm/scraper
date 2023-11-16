@@ -5,12 +5,14 @@ import { SocksProxyAgent } from 'socks-proxy-agent';
 import { createClient } from '@supabase/supabase-js'
 import { LocalStorage } from 'node-localstorage'
 import { v4 as uuidv4 } from 'uuid';
-import { proxyOptions, email, password, url, key } from './settings.js';
+// import { proxyOptions, email, password, url, key } from './settings.js';
+import dotenv from 'dotenv';
+dotenv.config({ path: './.env.local' });
 
 
+console.log("URL: ", process.env.URL);
 
-
-const agent = new SocksProxyAgent(proxyOptions);
+const agent = new SocksProxyAgent(process.env.PROXY);
 
 async function delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
@@ -18,6 +20,7 @@ async function delay(ms) {
 async function getJobDescriptionsForArray(jobPosts) {
     const descriptions = await Promise.all(jobPosts.map(async (job) => {
         let description = "";
+        let descriptionHTML = "";
         let retries = 3;  // Number of retry attempts
         let imageUrl = "";
 
@@ -28,62 +31,62 @@ async function getJobDescriptionsForArray(jobPosts) {
                 const html = response.data;
                 const $ = load(html);
                 // Extract the job description HTML
-                let descriptionHTML = $('.description__text--rich').html();
+                descriptionHTML = $('.description__text--rich > section > div').html();
                 // Re-parse the descriptionHTML with Cheerio
                 const $description = load(descriptionHTML);
                 // let description = "";
 
                 // Traverse all elements in the content
-                $description('div.show-more-less-html__markup').contents().each((_, node) => {
-                    const $node = $description(node);
+                // $description('div.show-more-less-html__markup').contents().each((_, node) => {
+                //     const $node = $description(node);
                 
-                    // Check if the node is a text node and has non-whitespace content
-                    if (node.type === 'text' && /\S/.test($node.text())) {
-                        description += $node.text().trim() + "\n\n";
-                        return;
-                    }
+                //     // Check if the node is a text node and has non-whitespace content
+                //     if (node.type === 'text' && /\S/.test($node.text())) {
+                //         description += $node.text().trim() + "\n\n";
+                //         return;
+                //     }
                 
-                    // If the node is an element, process it according to its tag name
-                    if (node.type === 'tag') {
-                        // If the element has no children, process its text content
-                        if ($node.children().length === 0) {
-                            switch (node.tagName) {
-                                case "li":
-                                    description += "* " + $node.text().trim() + "\n";
-                                    break;
-                                case "p":
-                                case "strong":
-                                case "em":
-                                    description += $node.text().trim() + "\n\n";
-                                    break;
-                                default:
-                                    description += $node.text().trim() + "\n";
-                            }
-                        } else {
-                            // If the element has children, traverse its leaf nodes (nodes without children) and process them
-                            $node.find(':not(:has(*))').each((_, leaf) => {
-                                const $leaf = $description(leaf);
-                                switch (leaf.tagName) {
-                                    case "li":
-                                        description += "* " + $leaf.text().trim() + "\n";
-                                        break;
-                                    case "p":
-                                    case "strong":
-                                    case "em":
-                                        description += $leaf.text().trim() + "\n\n";
-                                        break;
-                                    default:
-                                        description += $leaf.text().trim() + "\n";
-                                }
-                            });
-                        }
-                    }
-                });
+                //     // If the node is an element, process it according to its tag name
+                //     if (node.type === 'tag') {
+                //         // If the element has no children, process its text content
+                //         if ($node.children().length === 0) {
+                //             switch (node.tagName) {
+                //                 case "li":
+                //                     description += "* " + $node.text().trim() + "\n";
+                //                     break;
+                //                 case "p":
+                //                 case "strong":
+                //                 case "em":
+                //                     description += $node.text().trim() + "\n\n";
+                //                     break;
+                //                 default:
+                //                     description += $node.text().trim() + "\n";
+                //             }
+                //         } else {
+                //             // If the element has children, traverse its leaf nodes (nodes without children) and process them
+                //             $node.find(':not(:has(*))').each((_, leaf) => {
+                //                 const $leaf = $description(leaf);
+                //                 switch (leaf.tagName) {
+                //                     case "li":
+                //                         description += "* " + $leaf.text().trim() + "\n";
+                //                         break;
+                //                     case "p":
+                //                     case "strong":
+                //                     case "em":
+                //                         description += $leaf.text().trim() + "\n\n";
+                //                         break;
+                //                     default:
+                //                         description += $leaf.text().trim() + "\n";
+                //                 }
+                //             });
+                //         }
+                //     }
+                // });
                 const img = $('img.artdeco-entity-image');
                 imageUrl = img.eq(0).attr('data-delayed-url');
 
                 // console.log(description);  // This will print out the formatted job description
-                if (description.length>0) break; else {
+                if (descriptionHTML.length>0) break; else {
                     console.log(`Description is null for the https://www.linkedin.com/jobs/view/${job.jobId}/`);
                     break;
                 }
@@ -94,13 +97,13 @@ async function getJobDescriptionsForArray(jobPosts) {
             }
         }
 
-        if (description.length == 0 && retries == 0) {
+        if (descriptionHTML.length == 0 && retries == 0) {
             console.log(`Failed to extract description for job ID: ${job.jobId} after multiple attempts.`);
         }
         if (imageUrl.length == 0 && retries == 0) {
             console.log(`Failed to extract logo for job ID: ${job.jobId} after multiple attempts.`);
         }
-        const decrAndLogos = {description: description, imageUrl: imageUrl};
+        const decrAndLogos = {description: descriptionHTML, imageUrl: imageUrl};
         return decrAndLogos;
     }));
 
@@ -122,13 +125,14 @@ async function getAllDescriptions(jobPosts, settings) {
 }
 async function signIn(supabase){
   const res = await supabase.auth.signInWithPassword({
-    email: email,
-    password: password,
+    email: process.env.EMAIL,
+    password: process.env.PASSWORD,
   });
   return res;
 }
 async function getJobCards(obj, settings) {
     // Create an array of promises for each page search
+    // console.log("obj: ", obj)
     const promises = [];
     const url = obj.url;
     let pages = 1;
@@ -170,6 +174,7 @@ async function fetchJobCardsForPage(url, settings, i, maxRetries = 3) {
                 if (!datePosted) {
                     datePosted = $(node).find('time.job-search-card__listdate--new').attr('datetime');
                 }
+                // console.log("datePosted: ", datePosted);
                 const location = $(node).find('span.job-search-card__location').text().trim();
                 
                 const jobIdMatch = $(node).attr('data-entity-urn').match(/\d+$/);
@@ -182,8 +187,11 @@ async function fetchJobCardsForPage(url, settings, i, maxRetries = 3) {
                     // console.log("Skipping an old job: datePosted: ", datePosted);
                     return;
                 }
+                // console.log("New job:", datePosted)
                 jobCards.push({ title, company, location, datePosted, jobId });
             });
+            // console.log(jobCards.length)
+            // console.log("jobCards: ", jobCards[0])
             return jobCards;
         } catch (error) {
             if (error.response && error.response.status === 429 && attempt < maxRetries - 1) {
@@ -220,20 +228,20 @@ function getTltleFilteredJobs(records){
     for (let i = 0; i < records.length; i++) {
         // filter = records.data.filter(item => item.user_id == records[i].user_id);
         // if (filter.length > 0) {
-            if (records[i].title && records[i].exclude_title_words.length > 0) {
+            if (records[i].title && records[i].exclude_title_words?.length > 0) {
                 const excludeTitleWordsArray = records[i].exclude_title_words.split(',').map(word => word.trim());
                 if (excludeTitleWordsArray.some(word => records[i].title.toLowerCase().includes(word.toLowerCase()))) {
                     continue;
                 }              
             }
-            if (records[i].company && records[i].exclude_company.length > 0) {
+            if (records[i].company && records[i].exclude_company?.length > 0) {
                 const excludeCompanyWordsArray = records[i].exclude_company.split(',').map(word => word.trim());
                 if (excludeCompanyWordsArray.some(word => records[i].company.toLowerCase().includes(word.toLowerCase()))) {
                     // console.log("excluded company: ", records[i].company);
                     continue;
                 }
             }
-            if (records[i].title && records[i].include_title_words.length > 0) {
+            if (records[i].title && records[i].include_title_words?.length > 0) {
                 const includeTitleWordsArray = records[i].include_title_words.split(',').map(word => word.trim());
                 if (includeTitleWordsArray.some(word => records[i].title.toLowerCase().includes(word.toLowerCase()))) {
                     relevantJobs.push(records[i]);
@@ -267,12 +275,14 @@ function getDescriptionFilteredJobs(jobs){
     return relevantJobs;
 }
 function removeDuplicateCards(records) {
-    return records.reduce((acc, cur) => {
-      if (!acc.find(item => item.jobId === cur.jobId && item.user_id === cur.user_id)) {
-        acc.push(cur);
-      }
-      return acc;
-    }, []);
+    const rec = records.reduce((acc, cur) => {
+        if (!acc.find(item => item.jobId === cur.jobId && item.user_id === cur.user_id)) {
+          acc.push(cur);
+        }
+        return acc;
+      }, []);
+    console.log(rec.length)
+    return rec;
 }
 function separateArrays(records) {
     const uniqueJobsMap = new Map();
@@ -414,12 +424,12 @@ async function pushKnownJobs(knownJobs, supabase) {
 }
 
 async function main() {
-
+    // return;
      //Supabase connection and getting data from there
     global.localStorage = new LocalStorage("./scratch");
-    const supabase = createClient(url, key,{auth: {storage: global.localStorage,},})
+    const supabase = createClient(process.env.URL, process.env.KEY,{auth: {storage: global.localStorage,},})
     const supa = await signIn(supabase); //Signing into Supabase
-    const queriesRes = await supabase.from('job_queries').select('*')//.eq('user_id', '0b77d408-f32b-453d-8b25-da28f2d8f9fa') // getting all search queries from the database
+    const queriesRes = await supabase.from('job_queries').select('*')//.eq('user_id', '4304bd4b-fabb-4c0a-a038-f836eca01f2d') // getting all search queries from the database
     const profileRes = await supabase.from('job_profiles').select('*') // getting all job filters from the database
     const { data: settings } = await supabase.from('settings').select('*') // getting all settings from the database
     
@@ -431,6 +441,9 @@ async function main() {
             ...profile
         }
     });
+    const sampleSearch = [allSearches[0]];
+    //put sample search into an array of one item:
+
 
     // Go through each search query and get all job cards
     const allJobCards = await getJobCardsForAllQueries(allSearches, settings);

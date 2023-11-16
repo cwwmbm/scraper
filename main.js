@@ -9,9 +9,6 @@ import { v4 as uuidv4 } from 'uuid';
 import dotenv from 'dotenv';
 dotenv.config({ path: './.env.local' });
 
-
-console.log("URL: ", process.env.URL);
-
 const agent = new SocksProxyAgent(process.env.PROXY);
 
 async function delay(ms) {
@@ -385,7 +382,7 @@ function chunkArray(array, chunkSize) {
 }
 async function getJobCardsForAllQueries(queriesRes, settings) {
     const searchQueries = getSearchQueries(queriesRes); //Ammending an array with search URL for each query}
-    const queryChunks = chunkArray(searchQueries, 4);
+    const queryChunks = chunkArray(searchQueries, settings[0].query_chunk_size);
     console.log("queryChunks: ", queryChunks.length);
     // console.log("queryChunks: ", queryChunks[0]);
     const results = [];

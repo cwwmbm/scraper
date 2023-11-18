@@ -565,18 +565,18 @@ async function main() {
     let insertJobs, insertUserJobs, insertFilteredOutJobs;
     if (jobsToInsert) {
         // console.log("newUserJobsToInsert: ", newUserJobsToInsert.length);
-        insertJobs = await supabase.from('jobs').insert(jobsToInsert, {onConflict: 'job_url', ignoreDuplicates: true});
+        insertJobs = await supabase.from('jobs').upsert(jobsToInsert, {onConflict: 'job_url', ignoreDuplicates: true});
     }
 
     if (filteredOutJobsToInsert) {
         // console.log("newUserJobsToInsert: ", newUserJobsToInsert.length);
-        insertFilteredOutJobs = await supabase.from('jobs').insert(filteredOutJobsToInsert, {onConflict: 'job_url', ignoreDuplicates: true});
+        insertFilteredOutJobs = await supabase.from('jobs').upsert(filteredOutJobsToInsert, {onConflict: 'job_url', ignoreDuplicates: true});
     }
 
     // Insert userJobsToInsert into the user_jobs table
     if (!insertJobs.error && userJobsToInsert) {
         // console.log("newUserJobsToInsert: ", newUserJobsToInsert[0]);
-        insertUserJobs = await supabase.from('user_jobs').insert(userJobsToInsert, {onConflict: 'user_id, job_id', ignoreDuplicates: true});
+        insertUserJobs = await supabase.from('user_jobs').upsert(userJobsToInsert, {onConflict: 'user_id, job_id', ignoreDuplicates: true});
     }
 
 

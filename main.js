@@ -96,6 +96,7 @@ async function getJobDescriptionsForArray(jobPosts) {
 
         if (descriptionHTML.length == 0 && retries == 0) {
             console.log(`Failed to extract description for job ID: ${job.jobId} after multiple attempts.`);
+            descriptionHTML = "The search engine couldn't extract the description for this job. Please click Go To Job to see the description at the job page."
         }
         if (imageUrl.length == 0 && retries == 0) {
             console.log(`Failed to extract logo for job ID: ${job.jobId} after multiple attempts.`);

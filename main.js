@@ -522,8 +522,7 @@ async function main() {
         }
     })
     // console.log("knownJobsWithIDs: ", knownJobsWithIDs[0])
-    isInDB = knownJobs.find(job => job.job_url === "https://www.linkedin.com/jobs/view/3764303683/");
-    console.log("isInDB knownJobsWithIDs: ", isInDB);
+
 
     // Push known jobs to the user_jobs table
     pushKnownJobs(knownJobsWithIDs, supabase);

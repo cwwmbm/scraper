@@ -416,7 +416,7 @@ async function pushKnownJobs(knownJobs, supabase) {
         }
     });
     // console.log("jobsToUpsert: ", jobsToUpsert[0]);
-    const pushUserJobs = await supabase.from('user_jobs').upsert(jobsToUpsert, {onConflict: 'user_id, job_id', ignoreDuplicates: true});
+    const pushUserJobs = await supabase.from('user_jobs').upsert(jobsToUpsert, {onConflict: 'user_id, job_id, job_profile', ignoreDuplicates: true});
     if (pushUserJobs.error) console.log("pushUserJobs error: ", pushUserJobs.error); else console.log("pushUserJobs: ", pushUserJobs);
 }
 
@@ -426,7 +426,7 @@ async function main() {
     global.localStorage = new LocalStorage("./scratch");
     const supabase = createClient(process.env.URL, process.env.KEY,{auth: {storage: global.localStorage,},})
     const supa = await signIn(supabase); //Signing into Supabase
-    const queriesRes = await supabase.from('job_queries').select('*')//.eq('user_id', '16dc25c7-1898-48d2-9d24-0f879de6d82e') // getting all search queries from the database
+    const queriesRes = await supabase.from('job_queries').select('*').eq('user_id', '4304bd4b-fabb-4c0a-a038-f836eca01f2d') // getting all search queries from the database
     const profileRes = await supabase.from('job_profiles').select('*') // getting all job filters from the database
     const { data: settings } = await supabase.from('settings').select('*') // getting all settings from the database
     
@@ -616,7 +616,7 @@ async function main() {
     // Insert userJobsToInsert into the user_jobs table
     if (!insertJobs.error && userJobsToInsert) {
         // console.log("newUserJobsToInsert: ", newUserJobsToInsert[0]);
-        insertUserJobs = await supabase.from('user_jobs').upsert(userJobsToInsert, {onConflict: 'user_id, job_id', ignoreDuplicates: true});
+        insertUserJobs = await supabase.from('user_jobs').upsert(userJobsToInsert, {onConflict: 'user_id, job_id, job_profile', ignoreDuplicates: true});
     }
 
 

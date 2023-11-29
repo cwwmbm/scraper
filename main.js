@@ -1,5 +1,5 @@
 import {performance} from 'perf_hooks';
-import axios from 'axios';
+import axios, { all } from 'axios';
 import { load } from 'cheerio';
 import { SocksProxyAgent } from 'socks-proxy-agent';
 import { createClient } from '@supabase/supabase-js'
@@ -7,6 +7,7 @@ import { LocalStorage } from 'node-localstorage'
 import { v4 as uuidv4 } from 'uuid';
 // import { proxyOptions, email, password, url, key } from './settings.js';
 import dotenv from 'dotenv';
+// import { is } from 'cheerio/lib/api/traversing';
 dotenv.config({ path: './.env.local' });
 
 const agent = new SocksProxyAgent(process.env.PROXY);
@@ -14,6 +15,20 @@ const agent = new SocksProxyAgent(process.env.PROXY);
 async function delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
+async function signIn(supabase){
+    const res = await supabase.auth.signInWithPassword({
+      email: process.env.EMAIL,
+      password: process.env.PASSWORD,
+    });
+    return res;
+  }
+  function chunkArray(array, chunkSize) {
+      const chunks = [];
+      for (let i = 0; i < array.length; i += chunkSize) {
+          chunks.push(array.slice(i, i + chunkSize));
+      }
+      return chunks;
+  }
 async function getJobDescriptionsForArray(jobPosts) {
     const descriptions = await Promise.all(jobPosts.map(async (job) => {
         let description = "";
@@ -112,7 +127,6 @@ async function getJobDescriptionsForArray(jobPosts) {
     });
     return jobPosts;
 }
-
 async function getAllDescriptions(jobPosts, settings) {
     const jobPostsChunks = chunkArray(jobPosts, settings[0].chunk_size);
     const descriptions = [];
@@ -120,104 +134,6 @@ async function getAllDescriptions(jobPosts, settings) {
         descriptions.push(await getJobDescriptionsForArray(chunk));
     }
     return [].concat(...descriptions);
-}
-async function signIn(supabase){
-  const res = await supabase.auth.signInWithPassword({
-    email: process.env.EMAIL,
-    password: process.env.PASSWORD,
-  });
-  return res;
-}
-async function getJobCards(obj, settings) {
-    // Create an array of promises for each page search
-    // console.log("obj: ", obj)
-    const promises = [];
-    const url = obj.url;
-    let pages = 1;
-    if (settings[0].pages_to_scrape && settings[0].pages_to_scrape > 0) pages = settings[0].pages_to_scrape; else pages = 1;
-    for (let i = 0; i < pages; i++) {
-        promises.push(fetchJobCardsForPage(url, settings, i));
-    }
-
-    // Wait for all promises to resolve and flatten the resulting arrays
-    const results = await Promise.all(promises);
-    const allJobCards = [].concat(...results).map(card => ({
-        ...card,
-        ...obj,
-    }));
-
-    console.log("Job cards for the query: ", allJobCards.length);
-    return allJobCards;
-}
-async function fetchJobCardsForPage(url, settings, i, maxRetries = 3) {
-    let fullURL = url + (i * 25).toString();
-    let days = 30;
-    // console.log(settings)
-    if (settings[0].days_to_scrape && settings[0].days_to_scrape > 0) days = settings[0].days_to_scrape; else days = 30;
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-        try {
-            console.log("going to url: ", fullURL);
-
-            const response = await axios.get(fullURL, { httpAgent: agent, httpsAgent: agent, timeout: process.env.TIMEOUT });
-            const html = response.data;
-
-            const $ = load(html);
-            const jobCards = [];
-            
-            $('li > div.base-search-card').each((_, node) => {
-                let datePosted = null;
-                const title = $(node).find('h3.base-search-card__title').text().trim();
-                const company = $(node).find('h4.base-search-card__subtitle a').text().trim();
-                datePosted = $(node).find('time.job-search-card__listdate').attr('datetime');
-                if (!datePosted) {
-                    datePosted = $(node).find('time.job-search-card__listdate--new').attr('datetime');
-                }
-                // console.log("datePosted: ", datePosted);
-                const location = $(node).find('span.job-search-card__location').text().trim();
-                
-                const jobIdMatch = $(node).attr('data-entity-urn').match(/\d+$/);
-                const jobId = jobIdMatch ? jobIdMatch[0] : null;
-                // if (!datePosted) {
-                //     // retry again if datePosted is null
-                //     throw new Error(`datePosted is null for job ID: ${jobId}`);
-                // }
-                if (datePosted && new Date(datePosted) < new Date(new Date().setDate(new Date().getDate() - days))) {
-                    // console.log("Skipping an old job: datePosted: ", datePosted);
-                    return;
-                }
-                // console.log("New job:", datePosted)
-                jobCards.push({ title, company, location, datePosted, jobId });
-            });
-            // console.log(jobCards.length)
-            // console.log("jobCards: ", jobCards[0])
-            return jobCards;
-        } catch (error) {
-            if (error.response && error.response.status === 429 && attempt < maxRetries - 1) {
-                console.warn(`Received 429 response. Retrying in 3 seconds... (Retry ${attempt + 1}/${maxRetries})`);
-                // await delay(2000);  // Wait for 2 seconds before retrying
-            } else {
-                console.error(`Error fetching page ${fullURL}:`, error.message);
-                // await delay(2000);  // Wait for 2 seconds before retrying
-            }
-        }
-    }
-}
-function getSearchQueries(queriesRes){
-    const searchQueries = queriesRes.map(item => {
-        let workTypeID = "";
-        if (item.work_type == 'Remote') {
-            workTypeID = "2";
-        } else if (item.work_type == 'Hybrid') {
-            workTypeID = "1";
-        } else if (item.work_type == 'Onsite') {
-            workTypeID = "0";
-        } else workTypeID = "";
-        return {
-            ...item,
-            url: `https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=${encodeURIComponent(item.search_term)}&location=${encodeURIComponent(item.location)}&f_TPR=&f_WT=${workTypeID}&geoId=&f_TPR=r84600&start=`      
-        }
-    });
-    return searchQueries;
 }
 function getTltleFilteredJobs(records){
     let filter = [];
@@ -274,7 +190,7 @@ function getDescriptionFilteredJobs(jobs){
 }
 function removeDuplicateCards(records) {
     const rec = records.reduce((acc, cur) => {
-        if (!acc.find(item => item.jobId === cur.jobId && item.user_id === cur.user_id)) {
+        if (!acc.find(item => item.jobId === cur.jobId && item.user_id === cur.user_id && item.profile_id === cur.profile_id)) {
           acc.push(cur);
         }
         return acc;
@@ -374,18 +290,101 @@ async function findDatabaseDuplicates(records, supabase, settings) {
   
     return duplicates;
 }
-function chunkArray(array, chunkSize) {
-    const chunks = [];
-    for (let i = 0; i < array.length; i += chunkSize) {
-        chunks.push(array.slice(i, i + chunkSize));
+async function fetchJobCardsForPage(url, settings, i, maxRetries = 3) {
+    let fullURL = url + (i * 25).toString();
+    let days = 30;
+    // console.log(settings)
+    if (settings[0].days_to_scrape && settings[0].days_to_scrape > 0) days = settings[0].days_to_scrape; else days = 30;
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+            console.log("going to url: ", fullURL);
+
+            const response = await axios.get(fullURL, { httpAgent: agent, httpsAgent: agent, timeout: process.env.TIMEOUT });
+            const html = response.data;
+
+            const $ = load(html);
+            const jobCards = [];
+            
+            $('li > div.base-search-card').each((_, node) => {
+                let datePosted = null;
+                const title = $(node).find('h3.base-search-card__title').text().trim();
+                const company = $(node).find('h4.base-search-card__subtitle a').text().trim();
+                datePosted = $(node).find('time.job-search-card__listdate').attr('datetime');
+                if (!datePosted) {
+                    datePosted = $(node).find('time.job-search-card__listdate--new').attr('datetime');
+                }
+                // console.log("datePosted: ", datePosted);
+                const location = $(node).find('span.job-search-card__location').text().trim();
+                
+                const jobIdMatch = $(node).attr('data-entity-urn').match(/\d+$/);
+                const jobId = jobIdMatch ? jobIdMatch[0] : null;
+                // if (!datePosted) {
+                //     // retry again if datePosted is null
+                //     throw new Error(`datePosted is null for job ID: ${jobId}`);
+                // }
+                if (datePosted && new Date(datePosted) < new Date(new Date().setDate(new Date().getDate() - days))) {
+                    // console.log("Skipping an old job: datePosted: ", datePosted);
+                    return;
+                }
+                // console.log("New job:", datePosted)
+                jobCards.push({ title, company, location, datePosted, jobId });
+            });
+            // console.log(jobCards.length)
+            // console.log("jobCards: ", jobCards[0])
+            return jobCards;
+        } catch (error) {
+            if (error.response && error.response.status === 429 && attempt < maxRetries - 1) {
+                console.warn(`Received 429 response. Retrying in 3 seconds... (Retry ${attempt + 1}/${maxRetries})`);
+                // await delay(2000);  // Wait for 2 seconds before retrying
+            } else {
+                console.error(`Error fetching page ${fullURL}:`, error.message);
+                // await delay(2000);  // Wait for 2 seconds before retrying
+            }
+        }
     }
-    return chunks;
+}
+async function getJobCards(obj, settings) {
+    // Create an array of promises for each page search
+    // console.log("obj: ", obj)
+    const promises = [];
+    const url = obj.url;
+    let pages = 1;
+    if (settings[0].pages_to_scrape && settings[0].pages_to_scrape > 0) pages = settings[0].pages_to_scrape; else pages = 1;
+    for (let i = 0; i < pages; i++) {
+        promises.push(fetchJobCardsForPage(url, settings, i));
+    }
+
+    // Wait for all promises to resolve and flatten the resulting arrays
+    const results = await Promise.all(promises);
+    const allJobCards = [].concat(...results).map(card => ({
+        ...card,
+        ...obj,
+    }));
+
+    console.log("Job cards for the query: ", allJobCards.length);
+    return allJobCards;
+}
+function getSearchQueries(queriesRes){
+    const searchQueries = queriesRes.map(item => {
+        let workTypeID = "";
+        if (item.work_type == 'Remote') {
+            workTypeID = "2";
+        } else if (item.work_type == 'Hybrid') {
+            workTypeID = "1";
+        } else if (item.work_type == 'Onsite') {
+            workTypeID = "0";
+        } else workTypeID = "";
+        return {
+            ...item,
+            url: `https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=${encodeURIComponent(item.search_term)}&location=${encodeURIComponent(item.location)}&f_TPR=&f_WT=${workTypeID}&geoId=&f_TPR=r84600&start=`      
+        }
+    });
+    return searchQueries;
 }
 async function getJobCardsForAllQueries(queriesRes, settings) {
     const searchQueries = getSearchQueries(queriesRes); //Ammending an array with search URL for each query}
     const queryChunks = chunkArray(searchQueries, settings[0].query_chunk_size);
     console.log("queryChunks: ", queryChunks.length);
-    // console.log("queryChunks: ", queryChunks[0]);
     const results = [];
     for (const chunk of queryChunks) {
         const chunkResults = await Promise.all(chunk.map(obj => getJobCards(obj, settings)));
@@ -436,15 +435,50 @@ async function main() {
         const profile = profileRes.data.find(profile => profile.id === query.profile_id);
         return {
             ...query,
-            ...profile
+            ...profile,
         }
     });
-    const sampleSearch = [allSearches[0]];
-    //put sample search into an array of one item:
-
-
+    const uniqueSearchesSet = new Set();
+    const uniqueSearches = [];
+    const duplicates = [];
+    allSearches.forEach(search => {
+        const identifier = `${search.location.toLowerCase()}-${search.work_type}-${search.search_term.toLowerCase()}`;
+        
+        if (uniqueSearchesSet.has(identifier)) {
+            duplicates.push({...search, identifier}); // Add to duplicates if identifier is already seen
+        } else {
+            uniqueSearchesSet.add(identifier); // Add new identifier to Set
+            uniqueSearches.push({...search, identifier}); // Add to uniqueSearches if identifier is new
+        }
+      });
+    console.log("All Searches: ", allSearches.length)
+    console.log("Unique searches: ", uniqueSearches.length);
+    // console.log("Unique Search:" , uniqueSearches[0]);
+    console.log("Duplicate Searches: ", duplicates.length);
+    // return;
     // Go through each search query and get all job cards
-    const allJobCards = await getJobCardsForAllQueries(allSearches, settings);
+    const uniqueJobCards = await getJobCardsForAllQueries(uniqueSearches, settings);
+    const duplicaJobCards = [];
+    console.log("allJobCards: ", uniqueJobCards[0]);
+    duplicates.forEach(dup => {
+        console.log("dup: ", dup.identifier)
+        const matchingJobs = uniqueJobCards.filter(job => job.identifier === dup.identifier);
+        matchingJobs.forEach(job => {
+            console.log("matchingJob: ", job.title, " ", job.company, " ", job.datePosted, " ", job.jobId);
+            duplicaJobCards.push({...dup,
+                                title: job.title, 
+                                company: job.company,
+                                datePosted: job.datePosted,
+                                jobId: job.jobId});
+        });
+        // console.log("matchingJob: ", matchingJobs.length);
+        // console.log("matchingJob: ", matchingJobs[0]);
+        // console.log("dup: ", dup)
+        // duplucaJobCards.push(...dup, matchingJob.title, matchingJob.company, matchingJob.datePosted, matchingJob.jobId);
+    })
+    console.log("Duplicate Job Cards: ", duplicaJobCards.length);
+    // console.log("Duplicate Job Cards: ", duplicaJobCards[0]);
+    const allJobCards = [...uniqueJobCards, ...duplicaJobCards];
 
     // Remove duplicate cards from allJobCards
     const dedupedAllJobs = removeDuplicateCards(allJobCards);
@@ -459,12 +493,15 @@ async function main() {
           date_posted: convertDateToTimestamp(job.datePosted),
         }
     }); 
-    console.log("allFilteredCards: ", allFilteredCards.length)
 
+    // Figure out if job with jobId = 3764303683 is in the array
+
+    console.log("allFilteredCards: ", allFilteredCards.length)
 
     // Find duplicate jobs in the database
     const knownJobs = await findDatabaseDuplicates(allFilteredCards, supabase, settings);
     console.log("knownJobs: ", knownJobs.length)
+    // console.log("knownJobs: ", knownJobs[0])
 
     // Change the id of knownJobs to match the id of the corresponding job in the database
     const knownJobsWithIDs = knownJobs.map(job => {
@@ -484,6 +521,9 @@ async function main() {
 
         }
     })
+    // console.log("knownJobsWithIDs: ", knownJobsWithIDs[0])
+    isInDB = knownJobs.find(job => job.job_url === "https://www.linkedin.com/jobs/view/3764303683/");
+    console.log("isInDB knownJobsWithIDs: ", isInDB);
 
     // Push known jobs to the user_jobs table
     pushKnownJobs(knownJobsWithIDs, supabase);

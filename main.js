@@ -143,20 +143,20 @@ function getTltleFilteredJobs(records){
         // filter = records.data.filter(item => item.user_id == records[i].user_id);
         // if (filter.length > 0) {
             if (records[i].title && records[i].exclude_title_words?.length > 0) {
-                const excludeTitleWordsArray = records[i].exclude_title_words.split(',').map(word => word.trim());
+                const excludeTitleWordsArray = records[i].exclude_title_words.split(',').map(word => word.trim()).filter((word) => word.length > 0); 
                 if (excludeTitleWordsArray.some(word => records[i].title.toLowerCase().includes(word.toLowerCase()))) {
                     continue;
                 }              
             }
             if (records[i].company && records[i].exclude_company?.length > 0) {
-                const excludeCompanyWordsArray = records[i].exclude_company.split(',').map(word => word.trim());
+                const excludeCompanyWordsArray = records[i].exclude_company.split(',').map(word => word.trim()).filter((word) => word.length > 0); 
                 if (excludeCompanyWordsArray.some(word => records[i].company.toLowerCase().includes(word.toLowerCase()))) {
                     // console.log("excluded company: ", records[i].company);
                     continue;
                 }
             }
             if (records[i].title && records[i].include_title_words?.length > 0) {
-                const includeTitleWordsArray = records[i].include_title_words.split(',').map(word => word.trim());
+                const includeTitleWordsArray = records[i].include_title_words.split(',').map(word => word.trim()).filter((word) => word.length > 0); 
                 if (includeTitleWordsArray.some(word => records[i].title.toLowerCase().includes(word.toLowerCase()))) {
                     relevantJobs.push(records[i]);
                 }                
@@ -173,7 +173,7 @@ function getDescriptionFilteredJobs(jobs){
     for (let i = 0; i < jobs.length; i++) {
             if (jobs[i].exclude_description_words?.length > 0 && jobs[i].description.length > 0){
                 // console.log("Doing an exclude description filter")
-                const excludeDescriptionWordsArray = jobs[i].exclude_description_words.split(',').map(word => word.trim());
+                const excludeDescriptionWordsArray = jobs[i].exclude_description_words.split(',').map(word => word.trim()).filter((word) => word.length > 0); 
                 // console.log("excludeDescriptionWordsArray: ", excludeDescriptionWordsArray)
                 const matchingWord = excludeDescriptionWordsArray.find(word => jobs[i].description.toLowerCase().includes(word.toLowerCase()));
                 // console.log("matchingWord: ", matchingWord)

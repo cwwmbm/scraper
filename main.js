@@ -315,6 +315,7 @@ async function fetchJobCardsForPage(url, settings, i, maxRetries = 3) {
                 }
                 // console.log("datePosted: ", datePosted);
                 const location = $(node).find('span.job-search-card__location').text().trim();
+                // console.log("Location: ", location)
                 
                 const jobIdMatch = $(node).attr('data-entity-urn').match(/\d+$/);
                 const jobId = jobIdMatch ? jobIdMatch[0] : null;
@@ -356,12 +357,14 @@ async function getJobCards(obj, settings) {
 
     // Wait for all promises to resolve and flatten the resulting arrays
     const results = await Promise.all(promises);
+    // console.log("results: ", results[0]);
     const allJobCards = [].concat(...results).map(card => ({
-        ...card,
         ...obj,
+        ...card,
     }));
 
     console.log("Job cards for the query: ", allJobCards.length);
+    // console.log("Job cards for the query: ", allJobCards[0]);
     return allJobCards;
 }
 function getSearchQueries(queriesRes){
@@ -426,7 +429,7 @@ async function main() {
     global.localStorage = new LocalStorage("./scratch");
     const supabase = createClient(process.env.URL, process.env.KEY,{auth: {storage: global.localStorage,},})
     const supa = await signIn(supabase); //Signing into Supabase
-    const queriesRes = await supabase.from('job_queries').select('*')//.eq('user_id', '4304bd4b-fabb-4c0a-a038-f836eca01f2d') // getting all search queries from the database
+    const queriesRes = await supabase.from('job_queries').select('*').eq('user_id', '16dc25c7-1898-48d2-9d24-0f879de6d82e') // getting all search queries from the database
     const profileRes = await supabase.from('job_profiles').select('*') // getting all job filters from the database
     const { data: settings } = await supabase.from('settings').select('*') // getting all settings from the database
     
@@ -458,6 +461,8 @@ async function main() {
     // return;
     // Go through each search query and get all job cards
     const uniqueJobCards = await getJobCardsForAllQueries(uniqueSearches, settings);
+    // console.log("uniqueJobCards: ", uniqueJobCards[0]);
+    // return;
     const duplicaJobCards = [];
     console.log("allJobCards: ", uniqueJobCards[0]);
     duplicates.forEach(dup => {

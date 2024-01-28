@@ -20,9 +20,10 @@ async function signIn(supabase){
       email: process.env.EMAIL,
       password: process.env.PASSWORD,
     });
+    
     return res;
   }
-  function chunkArray(array, chunkSize) {
+function chunkArray(array, chunkSize) {
       const chunks = [];
       for (let i = 0; i < array.length; i += chunkSize) {
           chunks.push(array.slice(i, i + chunkSize));
@@ -359,8 +360,8 @@ async function getJobCards(obj, settings) {
     const results = await Promise.all(promises);
     // console.log("results: ", results[0]);
     const allJobCards = [].concat(...results).map(card => ({
-        ...obj,
         ...card,
+        ...obj,
     }));
 
     console.log("Job cards for the query: ", allJobCards.length);
@@ -429,8 +430,21 @@ async function main() {
     global.localStorage = new LocalStorage("./scratch");
     const supabase = createClient(process.env.URL, process.env.KEY,{auth: {storage: global.localStorage,},})
     const supa = await signIn(supabase); //Signing into Supabase
-    const queriesRes = await supabase.from('job_queries').select('*')//.eq('user_id', '16dc25c7-1898-48d2-9d24-0f879de6d82e') // getting all search queries from the database
-    const profileRes = await supabase.from('job_profiles').select('*') // getting all job filters from the database
+    const oneWeekAgo = new Date();
+    oneWeekAgo.setDate(oneWeekAgo.getDate() - 14);
+    const oneWeekAgoString = oneWeekAgo.toISOString();
+    console.log("oneWeekAgoString: ", oneWeekAgoString);
+
+    const res = await supabase.from('profiles').select('id').gt('last_sign_in_date', oneWeekAgoString)
+    const activeUsersArray = res.data.map(object => object.id);
+
+    console.log("Active Users: ", activeUsersArray.length);
+    // return;
+    // console.log("Signed in as: ", supa);
+    const queriesRes = await supabase.from('job_queries').select('*').in('user_id', activeUsersArray)//.eq('user_id', '16dc25c7-1898-48d2-9d24-0f879de6d82e') // getting all search queries from the database
+    // console.log("queriesRes: ", queriesRes.data.length)
+    // return;
+    const profileRes = await supabase.from('job_profiles').select('*').in('user_id', activeUsersArray) // getting all job filters from the database
     const { data: settings } = await supabase.from('settings').select('*') // getting all settings from the database
     
     // Combine search queries and search profiles into a single array allSearches

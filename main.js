@@ -441,7 +441,7 @@ async function main() {
     console.log("Active Users: ", activeUsersArray.length);
     // return;
     // console.log("Signed in as: ", supa);
-    const queriesRes = await supabase.from('job_queries').select('*').in('user_id', activeUsersArray).eq('user_id', '16dc25c7-1898-48d2-9d24-0f879de6d82e') // getting all search queries from the database
+    const queriesRes = await supabase.from('job_queries').select('*').in('user_id', activeUsersArray)//.eq('user_id', '16dc25c7-1898-48d2-9d24-0f879de6d82e') // getting all search queries from the database
     // console.log("queriesRes: ", queriesRes.data.length)
     // return;
     const profileRes = await supabase.from('job_profiles').select('*').in('user_id', activeUsersArray) // getting all job filters from the database

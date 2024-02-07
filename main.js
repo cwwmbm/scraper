@@ -34,7 +34,7 @@ async function getJobDescriptionsForArray(jobPosts) {
     const descriptions = await Promise.all(jobPosts.map(async (job) => {
         let description = "";
         let descriptionHTML = "";
-        let retries = 5;  // Number of retry attempts
+        let retries = 10;  // Number of retry attempts
         let imageUrl = "";
 
         while (retries > 0) {
@@ -360,8 +360,8 @@ async function getJobCards(obj, settings) {
     const results = await Promise.all(promises);
     // console.log("results: ", results[0]);
     const allJobCards = [].concat(...results).map(card => ({
-        ...card,
         ...obj,
+        ...card,
     }));
 
     console.log("Job cards for the query: ", allJobCards.length);
@@ -441,7 +441,7 @@ async function main() {
     console.log("Active Users: ", activeUsersArray.length);
     // return;
     // console.log("Signed in as: ", supa);
-    const queriesRes = await supabase.from('job_queries').select('*').in('user_id', activeUsersArray)//.eq('user_id', '16dc25c7-1898-48d2-9d24-0f879de6d82e') // getting all search queries from the database
+    const queriesRes = await supabase.from('job_queries').select('*').in('user_id', activeUsersArray).eq('user_id', '16dc25c7-1898-48d2-9d24-0f879de6d82e') // getting all search queries from the database
     // console.log("queriesRes: ", queriesRes.data.length)
     // return;
     const profileRes = await supabase.from('job_profiles').select('*').in('user_id', activeUsersArray) // getting all job filters from the database

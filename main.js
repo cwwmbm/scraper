@@ -34,7 +34,7 @@ async function getJobDescriptionsForArray(jobPosts) {
     const descriptions = await Promise.all(jobPosts.map(async (job) => {
         let description = "";
         let descriptionHTML = "";
-        let retries = 3;  // Number of retry attempts
+        let retries = 5;  // Number of retry attempts
         let imageUrl = "";
 
         while (retries > 0) {

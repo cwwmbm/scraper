@@ -130,9 +130,14 @@ async function getJobDescriptionsForArray(jobPosts) {
 }
 async function getAllDescriptions(jobPosts, settings) {
     const jobPostsChunks = chunkArray(jobPosts, settings[0].chunk_size);
+    console.log("Chunks for Description extraction ", jobPostsChunks.length)
     const descriptions = [];
+    let i = 1;
     for (const chunk of jobPostsChunks) {
+        // console.log("chunk: ", chunk.length);
         descriptions.push(await getJobDescriptionsForArray(chunk));
+        console.log("Chunk: ", i, " out of ", jobPostsChunks.length," is done");
+        i++;
     }
     return [].concat(...descriptions);
 }

@@ -31,7 +31,8 @@ function chunkArray(array, chunkSize) {
       return chunks;
   }
 async function getJobDescriptionsForArray(jobPosts) {
-    const descriptions = await Promise.all(jobPosts.map(async (job) => {
+    const descriptions = await Promise.all(jobPosts.map(async (job, index) => {
+        await delay(1000 * index);
         let description = "";
         let descriptionHTML = "";
         let retries = 10;  // Number of retry attempts
@@ -353,6 +354,7 @@ async function getJobCards(obj, settings) {
     let pages = 1;
     if (settings[0].pages_to_scrape && settings[0].pages_to_scrape > 0) pages = settings[0].pages_to_scrape; else pages = 1;
     for (let i = 0; i < pages; i++) {
+        await delay(1000 * i);
         promises.push(fetchJobCardsForPage(url, settings, i));
     }
 
@@ -441,10 +443,12 @@ async function main() {
     console.log("Active Users: ", activeUsersArray.length);
     // return;
     // console.log("Signed in as: ", supa);
-    const queriesRes = await supabase.from('job_queries').select('*').in('user_id', activeUsersArray).eq('user_id', '16dc25c7-1898-48d2-9d24-0f879de6d82e') // getting all search queries from the database
+    const queriesRes = await supabase.from('job_queries').select('*')
+    //.eq('user_id', '54693509-9f1c-4360-8d03-b1e138f698b6')
+    .eq('user_id', '16dc25c7-1898-48d2-9d24-0f879de6d82e') // getting all search queries from the database
     // console.log("queriesRes: ", queriesRes.data.length)
     // return;
-    const profileRes = await supabase.from('job_profiles').select('*').in('user_id', activeUsersArray) // getting all job filters from the database
+    const profileRes = await supabase.from('job_profiles').select('*')//.in('user_id', activeUsersArray) // getting all job filters from the database
     const { data: settings } = await supabase.from('settings').select('*') // getting all settings from the database
     
     // Combine search queries and search profiles into a single array allSearches

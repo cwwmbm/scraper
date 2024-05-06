@@ -31,7 +31,8 @@ function chunkArray(array, chunkSize) {
       return chunks;
   }
 async function getJobDescriptionsForArray(jobPosts) {
-    const descriptions = await Promise.all(jobPosts.map(async (job) => {
+    const descriptions = await Promise.all(jobPosts.map(async (job, index) => {
+        // await delay(1000*index);
         let description = "";
         let descriptionHTML = "";
         let retries = 10;  // Number of retry attempts
@@ -358,6 +359,7 @@ async function getJobCards(obj, settings) {
     let pages = 1;
     if (settings[0].pages_to_scrape && settings[0].pages_to_scrape > 0) pages = settings[0].pages_to_scrape; else pages = 1;
     for (let i = 0; i < pages; i++) {
+        await delay(1000 * i);
         promises.push(fetchJobCardsForPage(url, settings, i));
     }
 
@@ -436,7 +438,7 @@ async function main() {
     const supabase = createClient(process.env.URL, process.env.KEY,{auth: {storage: global.localStorage,},})
     const supa = await signIn(supabase); //Signing into Supabase
     const oneWeekAgo = new Date();
-    oneWeekAgo.setDate(oneWeekAgo.getDate() - 14);
+    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
     const oneWeekAgoString = oneWeekAgo.toISOString();
     console.log("oneWeekAgoString: ", oneWeekAgoString);
 

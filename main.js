@@ -5,6 +5,7 @@ import { SocksProxyAgent } from 'socks-proxy-agent';
 import { createClient } from '@supabase/supabase-js'
 import { LocalStorage } from 'node-localstorage'
 import { v4 as uuidv4 } from 'uuid';
+import { mapWithConcurrency, ratingFromScore, scoreJobFit } from './jev-fit.js';
 // import { proxyOptions, email, password, url, key } from './settings.js';
 import dotenv from 'dotenv';
 // import { is } from 'cheerio/lib/api/traversing';
@@ -378,16 +379,18 @@ async function getJobCards(obj, settings) {
 function getSearchQueries(queriesRes){
     const searchQueries = queriesRes.map(item => {
         let workTypeID = "";
+        let keywords = item.search_term;
         if (item.work_type == 'Remote') {
             workTypeID = "2";
+            keywords = `${item.search_term} remote`;
         } else if (item.work_type == 'Hybrid') {
-            workTypeID = "1";
+            workTypeID = "3";
         } else if (item.work_type == 'Onsite') {
-            workTypeID = "0";
+            workTypeID = "1";
         } else workTypeID = "";
         return {
             ...item,
-            url: `https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=${encodeURIComponent(item.search_term)}&location=${encodeURIComponent(item.location)}&f_TPR=&f_WT=${workTypeID}&geoId=&f_TPR=r84600&start=`      
+            url: `https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=${encodeURIComponent(keywords)}&location=${encodeURIComponent(item.location)}&f_TPR=&f_WT=${workTypeID}&geoId=&f_TPR=r84600&start=`      
         }
     });
     return searchQueries;
@@ -408,13 +411,129 @@ async function getJobCardsForAllQueries(queriesRes, settings) {
     return allJobCards;
 }
 
-async function pushKnownJobs(knownJobs, supabase) {
+function assignmentKey(userId, jobId, profileId) {
+    return `${userId}:${jobId}:${profileId}`;
+}
+function ratingKey(userId, jobId) {
+    return `${userId}:${jobId}`;
+}
+async function loadJevContexts(supabase, userIds) {
+    const contexts = new Map();
+    if (!userIds?.length) return contexts;
+    const enabled = [];
+    for (const batch of chunkArray(userIds, 100)) {
+        const { data, error } = await supabase
+            .from('profiles')
+            .select('id, jev_enabled')
+            .in('id', batch);
+        if (error) {
+            console.log('Error reading jev_enabled:', error);
+            continue;
+        }
+        for (const row of data ?? []) {
+            if (row.jev_enabled) enabled.push(row.id);
+        }
+    }
+    for (const batch of chunkArray(enabled, 100)) {
+        const { data, error } = await supabase
+            .from('resumes')
+            .select('user_id, resume_text, jev_instruction')
+            .in('user_id', batch);
+        if (error) {
+            console.log('Error reading resumes:', error);
+            continue;
+        }
+        for (const row of data ?? []) {
+            const resume = row.resume_text?.trim() ?? '';
+            if (!resume) continue;
+            contexts.set(row.user_id, {
+                resume,
+                jevInstruction: row.jev_instruction ?? '',
+            });
+        }
+    }
+    console.log('Users with Jev scoring:', contexts.size);
+    return contexts;
+}
+async function ratingsForNewJobs(supabase, jobs, jevContexts, jobIdOf, profileIdOf, userIdOf) {
+    if (!jevContexts?.size || jobs.length === 0) return new Map();
+    const existing = new Set();
+    const jobIds = [...new Set(jobs.map(jobIdOf).filter(Boolean))];
+    for (const batch of chunkArray(jobIds, 100)) {
+        const { data, error } = await supabase
+            .from('user_jobs')
+            .select('user_id, job_id, job_profile')
+            .in('job_id', batch);
+        if (error) {
+            console.log('Error reading existing user_jobs:', error);
+            continue;
+        }
+        for (const row of data ?? []) {
+            existing.add(assignmentKey(row.user_id, row.job_id, row.job_profile));
+        }
+    }
+
+    const pending = [];
+    const seen = new Set();
+    for (const job of jobs) {
+        const userId = userIdOf(job);
+        const context = jevContexts.get(userId);
+        if (!context) continue;
+        const jobId = jobIdOf(job);
+        if (existing.has(assignmentKey(userId, jobId, profileIdOf(job)))) continue;
+        const key = ratingKey(userId, jobId);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        pending.push({ job, userId, jobId, context });
+    }
+    if (pending.length === 0) return new Map();
+
+    console.log('Scoring new jobs with Jev:', pending.length);
+    const scored = await mapWithConcurrency(pending, 5, async (item) => {
+        const result = await scoreJobFit(
+            item.context.resume,
+            {
+                title: item.job.title,
+                company: item.job.company,
+                description: item.job.description,
+            },
+            item.context.jevInstruction
+        );
+        return {
+            key: ratingKey(item.userId, item.jobId),
+            rating: result.fit ? ratingFromScore(result.fit.score) : null,
+            cost: result.cost,
+        };
+    });
+
+    const ratings = new Map();
+    let cost = 0;
+    let scoredCount = 0;
+    for (const item of scored) {
+        cost += item.cost;
+        if (typeof item.rating === 'number') {
+            ratings.set(item.key, item.rating);
+            scoredCount += 1;
+        }
+    }
+    console.log(`Jev scored ${scoredCount} of ${pending.length} jobs, cost ${cost}`);
+    return ratings;
+}
+async function pushKnownJobs(knownJobs, supabase, jevContexts) {
     // console.log("knownJobs: ", knownJobs[0]);
     // console.log(knownJobs.length)
     const relevantJobToUpsert = getDescriptionFilteredJobs(knownJobs);
     console.log("relevantJobToUpsert: ", relevantJobToUpsert.length);
+    const ratings = await ratingsForNewJobs(
+        supabase,
+        relevantJobToUpsert,
+        jevContexts,
+        (job) => job.id,
+        (job) => job.job_profile,
+        (job) => job.user_id
+    );
     const jobsToUpsert = relevantJobToUpsert.map(job => {
-        return {
+        const row = {
             job_id: job.id,
             user_id: job.user_id,
             created_at: new Date().toISOString(),
@@ -424,7 +543,10 @@ async function pushKnownJobs(knownJobs, supabase) {
             is_rejected: false,
             date_posted: job.date_posted,
             job_profile: job.job_profile,
-        }
+        };
+        const rating = ratings.get(ratingKey(job.user_id, job.id));
+        if (typeof rating === 'number') row.jev_rating = rating;
+        return row;
     });
     // console.log("jobsToUpsert: ", jobsToUpsert[0]);
     const pushUserJobs = await supabase.from('user_jobs').upsert(jobsToUpsert, {onConflict: 'user_id, job_id, job_profile', ignoreDuplicates: true});
@@ -551,7 +673,8 @@ async function main() {
 
 
     // Push known jobs to the user_jobs table
-    pushKnownJobs(knownJobsWithIDs, supabase);
+    const jevContexts = await loadJevContexts(supabase, activeUsersArray);
+    await pushKnownJobs(knownJobsWithIDs, supabase, jevContexts);
     
     // Remove known jobs from allFilteredCards
     const allFilteredCardsWithoutKnownJobs = allFilteredCards.filter(job => !knownJobs.some(dup => dup.job_url === job.job_url));
@@ -613,18 +736,31 @@ async function main() {
       }));      
 
     // Transform the data to match the database for insertion for user_jobs table
-    const userJobsToInsert = filteredJobs.map(row => ({
-        job_id: row.id,
-        user_id: row.user_id,
-        created_at: new Date().toISOString(),
-        is_applied: false,
-        is_hidden: false,
-        is_interview: false,
-        is_rejected: false,
-        date_posted: row.date_posted,
-        notes: "",
-        job_profile: row.profile_id,
-    }));
+    const newJobRatings = await ratingsForNewJobs(
+        supabase,
+        filteredJobs,
+        jevContexts,
+        (job) => job.id,
+        (job) => job.profile_id,
+        (job) => job.user_id
+    );
+    const userJobsToInsert = filteredJobs.map(row => {
+        const record = {
+            job_id: row.id,
+            user_id: row.user_id,
+            created_at: new Date().toISOString(),
+            is_applied: false,
+            is_hidden: false,
+            is_interview: false,
+            is_rejected: false,
+            date_posted: row.date_posted,
+            notes: "",
+            job_profile: row.profile_id,
+        };
+        const rating = newJobRatings.get(ratingKey(row.user_id, row.id));
+        if (typeof rating === 'number') record.jev_rating = rating;
+        return record;
+    });
 
 
     // Insert jobsToInsert into the jobs table

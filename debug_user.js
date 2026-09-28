@@ -53,7 +53,7 @@ async function main() {
     const supabase = createClient(process.env.URL, process.env.KEY,{auth: {storage: global.localStorage,},})
     const supa = await signIn(supabase); //Signing into Supabase
     const cleanup = true;
-    const user_id = '54693509-9f1c-4360-8d03-b1e138f698b6';
+    const user_id = '5e69a71e-bdc0-4761-b357-5bb6d019e7e8';
     const admin_id = 'ef32ddc4-338c-4978-838b-fce1fa4f03c9';
     const admin_profile_id = 'a6972ca8-2550-4333-8729-c1ad884f5322';
     if (cleanup) {
@@ -67,6 +67,7 @@ async function main() {
     } else {
         const user_jobs = await supabase.from('user_jobs').select('*').eq('user_id', user_id);
         const queriesRes = await supabase.from('job_queries').select('*').eq('user_id', user_id);
+        console.log(user_jobs.data.length);
 
         //duplicate user_jobs for admin_user
         for (let i = 0; i < user_jobs.data.length; i++) {
